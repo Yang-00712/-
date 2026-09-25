@@ -25,3 +25,18 @@ html,body{max-width:100%;overflow-x:hidden}.brand-logo{width:42px;height:42px;bo
 @media(max-width:360px){.data-row .row-main{grid-template-columns:18px 21px minmax(0,1fr) 26px;padding:10px;gap:5px}.data-row .row-code .raw-e{font-size:12px}.row-metrics{gap:6px}.row-metrics .row-time strong{font-size:13px}}
 .icon-button.update-control { display:inline-flex; align-items:center; gap:5px; width:auto; padding-inline:8px; }
 .update-label { font-size:12px; white-space:nowrap; }
+
+/* Version details stay compact and update in place while the dialog is open. */
+.info-dialog{display:grid;gap:16px}.version-grid{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 16px;margin:0;padding:15px;border:1px solid var(--line);border-radius:12px;background:#f8faf7}.version-grid dt{color:var(--muted);font-size:12px}.version-grid dd{margin:0;color:var(--deep);font-weight:750;overflow-wrap:anywhere}.info-dialog .foot-actions{margin-top:0}
+
+/* Row signals remain readable over the workbook color marks. */
+.equipment-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.equipment-change{background:#e8eeea;color:#355d54}.missing-background{background:#fff0ce;color:#8a5519}.interval-pill{display:inline-flex;align-items:center;justify-content:center;min-width:46px;padding:2px 6px;border:1px solid transparent;border-radius:999px;font-variant-numeric:tabular-nums}.interval-alert{background:#fff0d7;border-color:#e7b970;color:#844f13;font-weight:750}.interval-empty{color:#85968b}.load-sentinel{height:2px;width:100%;pointer-events:none}
+
+/* Results always use their own compact table and one source-code column. */
+.result-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 8px;color:var(--muted);font-size:12px}.result-controls label{display:flex;align-items:center;gap:8px;min-height:42px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--deep);font-weight:700}.result-controls input{width:18px;height:18px}.result-table{min-width:1050px}.result-table th.result-code-head,.result-table td.result-code{min-width:250px;max-width:390px;white-space:normal;overflow-wrap:anywhere}.result-table td.result-code{font:700 12px/1.55 ui-monospace,"SFMono-Regular",Consolas,monospace;color:#173f3a}.result-table tr.floor-mark td.result-code{color:#b33b30}.result-table tr.extra-mark td.result-code{color:#82600b}.result-table tr.floor-mark.extra-mark td.result-code{color:#b33b30}.result-scroll{max-height:72vh;max-height:72dvh}
+
+@media(max-width:540px){.version-grid{padding:12px;gap:8px 12px}.result-table{min-width:1000px}.result-table th.result-code-head,.result-table td.result-code{min-width:235px;max-width:300px}.result-scroll{border-radius:10px}.result-controls{margin-top:10px}}
+@media(max-width:360px){.result-table th.result-code-head,.result-table td.result-code{min-width:220px;max-width:270px}}
+
+/* Keep the code, G, time and interval together in the first phone-width view. */
+.result-table{table-layout:fixed;min-width:786px;width:786px;max-width:786px}.result-table th,.result-table td{padding:7px 4px;white-space:normal;overflow-wrap:anywhere}.result-table th.result-code-head,.result-table td.result-code{min-width:0;max-width:none;font-size:11px}.result-table .time-cell{white-space:nowrap;font-size:11px}.result-table th small{margin-left:3px;font-size:9px;font-weight:400}.result-table .window-value{padding:3px 4px}.result-table .interval-pill{min-width:0;padding:2px 4px}.result-table .equipment-name{white-space:normal}.result-table .equipment-tags{gap:3px}.result-table td:first-child{font-size:10px}
