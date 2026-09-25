@@ -335,9 +335,20 @@ function solveHalf(rows, anchor, deadline, earlyMin, earlyMax, settings, remoteM
   const minTotal=bounds.reduce((n,b)=>n+b.lo,0), maxTotal=bounds.reduce((n,b)=>n+b.hi,0);
   if(Math.max(minTotal,targetLo)>Math.min(maxTotal,targetHi)) return {error:`${period}在目前逐列上下限與返回範圍下未找到可行總秒數（可排 ${minTotal}–${maxTotal} 秒；需要 ${targetLo}–${targetHi} 秒）`};
   const target=Math.max(minTotal,Math.min(targetHi,Math.round((Math.max(minTotal,targetLo)+Math.min(maxTotal,targetHi))/2)));
-  const gaps=bounds.map(b=>b.lo); let remaining=target-minTotal;
-  const order=bounds.map((_,i)=>i);
-  while(remaining>0){ shuffle(order,random); let progress=false; for(const i of order){if(gaps[i]<bounds[i].hi){gaps[i]++;remaining--;progress=true;if(!remaining)break;}} if(!progress)break; }
+  // Start from a per-row preference. Allocate remaining time in proportion to
+  // available slack, so short ordinary ranges are not filled to their cap first.
+  const gaps=bounds.map(b=>b.lo+Math.floor(random()*(b.hi-b.lo+1)));
+  let remaining=target-gaps.reduce((sum,gap)=>sum+gap,0);
+  while(remaining!==0){
+    const direction=remaining>0?1:-1;
+    const rooms=bounds.map((b,i)=>direction>0?b.hi-gaps[i]:gaps[i]-b.lo);
+    const capacity=rooms.reduce((sum,room)=>sum+room,0);
+    if(!capacity)break;
+    let pick=random()*capacity,index=rooms.length-1;
+    for(let i=0;i<rooms.length;i++){pick-=rooms[i];if(pick<0){index=i;break;}}
+    const delta=Math.min(Math.abs(remaining),Math.max(1,Math.ceil(rooms[index]/8)));
+    gaps[index]+=direction*delta;remaining-=direction*delta;
+  }
   repairTriples(gaps,bounds);
   if(settings.mode==='auto') for(let end=80;end<gaps.length;end++) {
     let total=gaps.slice(end-79,end+1).reduce((a,b)=>a+b,0), deficit=3660-total;

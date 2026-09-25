@@ -89,3 +89,9 @@ test('auto preview enforces a formed 80-interval window',()=>{
   assert.equal(result.ok,true,result.errors?.join(';'));
   assert.ok(result.summary.minWindowSeconds>=3660);
 });
+test('demo ordinary intervals retain per-row variation instead of filling every cap',()=>{
+  const r=solvePreview(makeDemo().rows,DEFAULT_SETTINGS,{}, {seed:123});
+  assert.ok(r.ok,r.errors?.join(';'));
+  const ordinary=r.rows.filter(x=>x.parts.some(p=>p.startsWith('普通 '))&&x.parts.length===1);
+  assert.ok(new Set(ordinary.map(x=>x.interval)).size>=6);
+});
