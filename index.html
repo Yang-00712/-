@@ -10,13 +10,13 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>LOG · 行動工作台</title>
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/svg+xml" href="./icon.svg">
-  <link rel="apple-touch-icon" href="./icon-192.png">
+  <link rel="icon" type="image/png" href="./icon-192.png?v=cat">
+  <link rel="apple-touch-icon" href="./icon-192.png?v=cat">
   <link rel="stylesheet" href="./app.css">
   <script type="module" src="./app.mjs"></script>
 </head>
 <body>
-  <div id="app"><div class="boot"><span class="brand-mark">L<span>•</span></span><p>開啟你的工作台…</p></div></div>
+  <div id="app"><div class="boot"><img class="brand-mark" src="./icon-192.png" alt="LOG"><p>載入中…</p></div></div>
   <dialog id="modal"></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <noscript>LOG 需要開啟 JavaScript 才能在裝置內讀取檔案與計算。</noscript>
