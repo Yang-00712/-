@@ -1,4 +1,4 @@
-import {DEFAULT_SETTINGS,PLANTS,parseRows,makeDemo,autocolor,parseClock,formatClock,formatDuration,validateSettings,isSpecial} from './domain.mjs';
+import {DEFAULT_SETTINGS,PLANTS,parseRows,makeDemo,autocolor,parseClock,formatClock,formatDuration,validateSettings,isSpecial,colorTimeGuide} from './domain.mjs';
 import {saveJob,getJobs,removeJob,validateProject,remoteMap,durationInput,csvCell,matchSheetName} from './storage.mjs';
 import {windowReport,backgroundReport} from './validation.mjs';
 import './version.js';
@@ -64,12 +64,12 @@ function refreshInfoDialog(){if(!modal.open||modal.dataset.kind!=='info')return;
 function refreshUpdateState(){const state=updater?.state||'idle';refreshInfoDialog();document.querySelectorAll('[data-act="check-update"],[data-act="recover-update"]').forEach(el=>{const ready=state==='available',label={checking:'檢查中',downloading:'下載中',applying:'更新中',recovery:'再載入'}[state]||'更新';el.disabled=state==='applying';el.setAttribute('aria-label',state==='recovery'?'儲存並重新載入':ready?'立即更新':state==='applying'?'更新中':'檢查並更新');el.title=state==='recovery'?'完成新版載入':ready?'有新版，儲存後更新':label==='更新'?'檢查並更新':label;el.querySelector('.update-label')?.replaceChildren(label);const dot=el.querySelector('.update-dot');if(dot)dot.hidden=!(ready||state==='recovery');});offlineReady=updater?.hasOfflineShell||offlineReady;}
 function render(){
  rowObserver?.disconnect();rowObserver=null;
- const title={data:'資料',marks:'標記',settings:'時間設定',results:'結果'}[tab];
- const subtitle={data:'匯入或檢視元件資料。',marks:'篩選、選取，再套用標記或遠距。',settings:'設定時段、規則與遠距組合。',results:'檢視試排時間與逐筆間隔。'}[tab];
+ const title={data:'資料',marks:'標記',settings:'時間設定',results:'結果',guide:'操作說明'}[tab];
+ const subtitle={data:'匯入或檢視元件資料。',marks:'篩選、選取，再套用標記或遠距。',settings:'設定時段、規則與遠距組合。',results:'檢視試排時間與逐筆間隔。',guide:`顏色與時間 · 目前${job.settings.difficulty==='hard'?'難檢':'一般'} · 分:秒`}[tab];
  root.innerHTML=`<header class="topbar"><div class="brand"><img class="brand-logo" src="./icon-192.png" alt="LOG"><div class="brand-title">LOG</div></div><div class="top-actions"><span class="status-pill"><i class="status-dot"></i><span data-save>${esc(saveState)}</span></span>${updateButton()}<button class="icon-button" data-act="help" aria-label="資訊">${icon('info')}</button>${button('卡夾','shelf','light','folder')}</div></header>
- <main class="workspace"><div class="page-heading"><div>${job.rows.length?`<div class="eyebrow">${esc(job.plant)}</div>`:''}<h1>${title}</h1><p>${subtitle}</p></div>${job.rows.length?button('匯出卡夾','backup','light desktop-only','download'):''}</div>
+ <main class="workspace"><div class="page-heading"><div>${job.rows.length?`<div class="eyebrow">${esc(job.plant)}</div>`:''}<h1>${title}</h1><p>${subtitle}</p></div>${tab==='guide'?button('返回','guide-back','light','undo'):job.rows.length?button('匯出卡夾','backup','light desktop-only','download'):''}</div>
  <nav class="tabs" aria-label="工作流程">${tabs.map(([id,label,ico],i)=>`<button class="tab ${tab===id?'active':''}" data-act="tab" data-tab="${id}" aria-current="${tab===id?'page':'false'}"><span class="step">0${i+1}</span>${icon(ico)}${label}</button>`).join('')}</nav>
- <div class="layout"><section class="main-col">${tab==='data'?dataView():tab==='marks'?marksView():tab==='settings'?settingsView():resultsView()}</section><aside class="aside">${asideView()}</aside></div>
+ <div class="layout ${tab==='guide'?'guide-layout':''}"><section class="main-col">${tab==='data'?dataView():tab==='marks'?marksView():tab==='settings'?settingsView():tab==='guide'?guideView():resultsView()}</section>${tab==='guide'?'':`<aside class="aside">${asideView()}</aside>`}</div>
  </main>
  <nav class="mobile-nav" aria-label="工作流程">${tabs.map(([id,label,ico])=>`<button class="nav-item ${tab===id?'active':''}" data-act="tab" data-tab="${id}" aria-current="${tab===id?'page':'false'}">${icon(ico)}<span>${label}</span></button>`).join('')}</nav>
  <input type="file" id="source-file" class="file-input" accept=".xlsx,.xlsm"><input type="file" id="project-file" class="file-input" accept=".json,application/json">`;
@@ -102,7 +102,7 @@ function selectionDock(){if(!selection.size)return '';return `<div class="select
 function marksView(){if(!job.rows.length)return empty();return `${sourceCard()}<div class="mark-tools">${button('自動標色','autocolor','light','paint')}${button('復原','undo','light','undo',undoStack.length?'':'disabled')}${button('時間設定','to-settings','primary','clock')}</div>${filters()}${rowList(true)}${selectionDock()}`;}
 function field(label,key,type='clock',value=job.settings[key]){return `<div class="field"><label for="setting-${key}">${label}</label><input id="setting-${key}" type="text" inputmode="${type==='clock'?'numeric':'decimal'}" data-setting="${key}" data-kind="${type}" value="${esc(type==='duration'?formatDuration(value):value)}" autocomplete="off" spellcheck="false"></div>`;}
 function segment(key,options){return `<div class="segmented">${options.map(([v,label])=>`<button class="segment ${job.settings[key]===v?'active':''}" data-act="setting-choice" data-key="${key}" data-value="${v}" aria-pressed="${job.settings[key]===v}">${label}</button>`).join('')}</div>`;}
-function settingsView(){return `<div class="stack settings-main"><div class="card"><div class="settings-section"><div class="section-title"><span class="section-icon">${icon('sun')}</span><div><h3>上午時段</h3><p>可直接輸入 0820，或 08:20</p></div></div><div class="time-range">${field('開始','amStart')}<span class="time-arrow">→</span>${field('截止','amEnd')}</div></div><div class="settings-section"><div class="section-title"><span class="section-icon">${icon('moon')}</span><div><h3>下午時段</h3><p>下午從 1F 重新出發</p></div></div><div class="time-range">${field('開始','pmStart')}<span class="time-arrow">→</span>${field('截止','pmEnd')}</div></div></div>
+function settingsView(){return `<div class="stack settings-main">${button('操作說明 · 顏色時間','color-guide','light','paint')}<div class="card"><div class="settings-section"><div class="section-title"><span class="section-icon">${icon('sun')}</span><div><h3>上午時段</h3><p>可直接輸入 0820，或 08:20</p></div></div><div class="time-range">${field('開始','amStart')}<span class="time-arrow">→</span>${field('截止','amEnd')}</div></div><div class="settings-section"><div class="section-title"><span class="section-icon">${icon('moon')}</span><div><h3>下午時段</h3><p>下午從 1F 重新出發</p></div></div><div class="time-range">${field('開始','pmStart')}<span class="time-arrow">→</span>${field('截止','pmEnd')}</div></div></div>
  <div class="card settings-section"><div class="section-title"><span class="section-icon">${icon('sliders')}</span><h3>檢測規則</h3></div><div class="setting-row"><div class="left"><h3>檢測難度</h3><p>黃底 ${job.settings.difficulty==='hard'?'2:31～3:10':'1:31～2:10'}，樓層與特殊另加</p></div>${segment('difficulty',[['normal','一般'],['hard','難']])}</div><div class="setting-row"><div class="left"><h3>80 顆驗證</h3><p>廠外仍保留其他時間規則</p></div>${segment('mode',[['auto','Auto'],['outdoor','廠外']])}</div>
  <details class="details-panel"><summary>首筆進場、收尾與跨區</summary><p class="inline-hint">分秒可填 1.30 或 130（1分30秒）。</p><h3 class="settings-title">首筆進場等待 · 分:秒</h3><div class="fields">${field('下限','entryMin','duration')}${field('上限','entryMax','duration')}</div><h3 class="settings-title">上午返回 1F · 截止前多久</h3><div class="fields">${field('最少提前','amEarlyMin','duration')}${field('最多提前','amEarlyMax','duration')}</div><h3 class="settings-title">下午返回 1F · 截止前多久</h3><div class="fields">${field('最少提前','pmEarlyMin','duration')}${field('最多提前','pmEarlyMax','duration')}</div><h3 class="settings-title">跨區額外加時 · 分:秒</h3><div class="fields">${field('下限','crossMin','duration')}${field('上限','crossMax','duration')}</div></details>
  <details class="details-panel"><summary>普通間隔範圍</summary><div class="info-note">這版把「基礎＋差值」顯示為實際秒數範圍。設定只影響本卡夾，不會更改 Excel。</div><div class="fields" style="margin-top:14px">${field('一般下限（秒）','normalMin','seconds')}${field('一般上限（秒）','normalMax','seconds')}${field('難檢下限（秒）','hardMin','seconds')}${field('難檢上限（秒）','hardMax','seconds')}</div></details></div>
@@ -151,7 +151,20 @@ async function generate(){ensureIdle();if(!job.rows.length)throw new Error('請�
  solver.postMessage({rows:job.rows,settings:job.settings,remoteMap:remoteMap(job),seed:crypto.getRandomValues(new Uint32Array(1))[0],revision});
 }
 function cancel(){solver?.terminate();solver=null;clearTimeout(solverTimer);busy=false;render();toast('已取消試排，資料與標記保留。');}
-function help(){showModal('資訊',infoHtml(),'info');refreshUpdateState();void updater?.check(true);}
+let guideReturn='settings';
+function guideView(){
+ const rule=colorTimeGuide(job.settings),range=values=>values.map(formatDuration).join('～');
+ const rows=[
+  ['yellow','黃底',range(rule.background),'換背景'],
+  ['blue','藍底',range(rule.background),'程式補背景，同黃底'],
+  ['red','紅底',range(rule.cross),'已含背景＋跨區；換樓層再加移動'],
+  ['floor','樓層紅字','背景＋樓層移動','依相差樓層計算，底色保留'],
+  ['extra','黃字',range(rule.extra),'無底色、未換樓層時使用；有底色則依底色時間'],
+  ['special','粉字 CPRSAI',`＋${formatDuration(rule.special)}`,'型式命中任一字母，每筆只加一次'],
+ ];
+ return `<div class="color-guide">${rows.map(([color,label,time,note])=>`<article class="card color-guide-row"><span class="guide-swatch guide-${color}" aria-hidden="true">${['floor','extra','special'].includes(color)?'字':''}</span><div><h2>${label}</h2><p>${note}</p></div><strong class="guide-time">${time}</strong></article>`).join('')}<details class="card guide-floors"><summary>樓層紅字 · 含黃底時間</summary><div class="guide-floor-table"><table><thead><tr><th>相差</th><th>上樓</th><th>下樓</th></tr></thead><tbody>${rule.floors.map(f=>`<tr><th>${f.difference} 層</th><td>${range(f.up)}</td><td>${range(f.down)}</td></tr>`).join('')}</tbody></table></div></details><p class="inline-hint guide-note">每段首筆黃底依進場 ${range(rule.entry)}，上樓另加。粉字、遠距另行疊加。</p></div>`;
+}
+function help(){showModal('資訊',button('操作說明 · 顏色時間','color-guide','light w100','paint')+infoHtml(),'info');refreshUpdateState();void updater?.check(true);}
 
 async function action(name,el){
  const mutating=['paint','undo','autocolor','remote-add','remote-edit','remote-append','remote-delete','remote-reset','edit-row','edit-distance','setting-choice','new-job','delete-job','load-job','demo','rename','import','restore'];if(mutating.includes(name))ensureIdle();
@@ -160,6 +173,8 @@ async function action(name,el){
  case 'tab':changeTab(el.dataset.tab);break;
  case 'to-marks':changeTab('marks');break;case 'to-settings':changeTab('settings');break;
  case 'close-modal':closeModal();break;case 'help':help();break;
+ case 'color-guide':if(tab!=='guide')guideReturn=tab;if(modal.open)closeModal();changeTab('guide');break;
+ case 'guide-back':changeTab(guideReturn);break;
  case 'check-update':if(updater?.state==='recovery')await updater.recover();else await updater?.update();break;
  case 'recover-update':await updater?.recover();break;
  case 'import':document.getElementById('source-file').click();break;

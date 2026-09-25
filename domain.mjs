@@ -13,6 +13,8 @@ export const PLANTS = Object.freeze([
 
 const SPECIAL = new Set(['C', 'P', 'R', 'S', 'A', 'I']);
 const BG = Object.freeze({ normal: [91, 130], hard: [151, 190] });
+const EXTRA = Object.freeze([60, 89]);
+const SPECIAL_SECONDS = 60;
 
 // 2027-10 TimeConfig A33:E56/A91:E123. Values are pure movement seconds.
 const UP = [[60,75,90],[120,130,140],[144,162,179],[173,198,223],[234,250,265],
@@ -263,6 +265,16 @@ function movement(from, to) {
   return (to > from ? UP : DOWN)[delta - 1];
 }
 
+export function colorTimeGuide(settings) {
+  const background = BG[settings.difficulty];
+  const total = range => [background[0] + range[0], background[1] + range[range.length - 1]];
+  return {
+    background: [...background], cross: total([settings.crossMin, settings.crossMax]),
+    extra: [...EXTRA], special: SPECIAL_SECONDS, entry: [settings.entryMin, settings.entryMax],
+    floors: UP.map((up, index) => ({difference: index + 1, up: total(up), down: total(DOWN[index])})),
+  };
+}
+
 function remoteBounds(remote, id) {
   const value = remote?.[id];
   if (!value) return [0,0,''];
@@ -287,12 +299,12 @@ function rowBounds(row, previous, first, settings, remoteMap) {
       const band = movement(previous.floor, row.floor); if (!band) return {error:`${row.id} 缺少 ${previous.floor}F 到 ${row.floor}F 的樓層時間表`};
       add(background[0], background[1], '背景'); add(band[0], band[2], '樓層移動');
     } else if (row.background !== 'none' || row.floorMark) add(background[0], background[1], '背景');
-    else if (row.extraMark) add(60,89,'黃字加時');
+    else if (row.extraMark) add(EXTRA[0],EXTRA[1],'黃字加時');
     else { add(settings.difficulty === 'hard' ? settings.hardMin : settings.normalMin,
       settings.difficulty === 'hard' ? settings.hardMax : settings.normalMax, '普通'); ordinary = true; }
     if (cross) add(settings.crossMin, settings.crossMax, '跨區');
   }
-  if (isSpecial(row)) add(60,60,'CPRSAI');
+  if (isSpecial(row)) add(SPECIAL_SECONDS,SPECIAL_SECONDS,'CPRSAI');
   const remote = remoteBounds(remoteMap,row.id); if (!remote) return {error:`${row.id} 遠距上下限錯誤`};
   add(remote[0],remote[1],remote[2] || '遠距');
   if (isSpecial(row) || row.extraMark || remote[1] > 0) ordinary = false;
