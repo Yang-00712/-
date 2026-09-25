@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {durationInput,validateProject,remoteMap,csvCell,matchSheetName} from '../storage.mjs';
+import {DEFAULT_SETTINGS,makeDemo} from '../domain.mjs';
+test('duration accepts mm:ss or decimal minutes, never invalid seconds',()=>{assert.equal(durationInput('2:20'),140);assert.equal(durationInput('3.5'),210);assert.equal(durationInput('0'),0);assert.throws(()=>durationInput('2:60'));assert.throws(()=>durationInput('-3'));});
+test('import strips claimed results and rejects duplicate row IDs',()=>{const p={schema:1,name:'測試',...makeDemo(),settings:{...DEFAULT_SETTINGS},remotes:[],result:{ok:true}};const safe=validateProject(p);assert.equal(safe.result,null);const duplicate=structuredClone(p);duplicate.rows[1].id=duplicate.rows[0].id;assert.throws(()=>validateProject(duplicate));});
+test('single-row override does not alter group settings',()=>{const p={remotes:[{name:'遠距',rowIds:['r1','r2'],min:140,max:240}],overrides:{r1:{min:180,max:300}}};assert.equal(remoteMap(p).r1.min,180);assert.equal(remoteMap(p).r2.min,140);assert.equal(p.remotes[0].min,140);});
+test('import validates remote ownership, ranges and row markup',()=>{const p={schema:1,name:'測試',...makeDemo(),settings:{...DEFAULT_SETTINGS},remotes:[{id:'g',name:'跨區',rowIds:['missing'],min:140,max:240}]};assert.throws(()=>validateProject(p));p.remotes=[];p.rows[0].background='<script>';assert.throws(()=>validateProject(p));});
+test('CSV is quoted and does not execute spreadsheet formulas',()=>{assert.equal(csvCell('=1+1'),'"\'=1+1"');assert.equal(csvCell('A"B'),'"A""B"');});
+test('sheet search preserves Chinese and matches fullwidth parentheses',()=>{assert.ok(matchSheetName('第34份（東區）','34份(東區)'));assert.ok(matchSheetName('31(200.300)','(200.300)'));assert.ok(matchSheetName('中文 工作頁','中文工作頁'));assert.ok(!matchSheetName('第34份(東区)','第35'));});
