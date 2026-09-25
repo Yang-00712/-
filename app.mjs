@@ -33,7 +33,7 @@ const button=(label,act,style='',ico='',attrs='')=>`<button class="button ${styl
 const tabs=[['data','資料','folder'],['marks','標記','paint'],['settings','時間設定','sliders'],['results','結果','chart']];
 const root=document.getElementById('app'),modal=document.getElementById('modal');
 let jobs=[],job,tab='data',selection=new Set(),search='',regionFilter='',markFilter='all',shown=60,expanded=new Set(),undoStack=[],busy=false,solver=null,solverTimer,saveTimer,saveChain=Promise.resolve(),saveState='尚未儲存',offlineReady=false,importer=null,importData=null,toastTimer;
-let viewMode='table',showContext=false,paletteOpen=false,updater=null,deletingJob=false;
+let viewMode='table',showContext=false,paletteOpen=false,updater=null,deletingJob=false,updateIdle=true;
 function blankJob(name='未命名卡夾'){return {schema:1,id:crypto.randomUUID(),name,sourceName:'',sheet:'',plant:'',rows:[],settings:{...DEFAULT_SETTINGS},remotes:[],overrides:{},result:null,revision:0,updated:new Date().toISOString(),demo:false};}
 function toast(message){const el=document.getElementById('toast');el.textContent=message;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,5000);}
 function ensureIdle(){if(updater?.state==='applying')throw new Error('正在儲存並更新，請稍候。');if(busy)throw new Error('正在試排。請先按「取消」，再修改資料。');}
@@ -56,8 +56,8 @@ function renderKeepScroll(){const x=window.scrollX,y=window.scrollY,tableX=docum
 function resultCurrent(){return job.result?.ok&&job.result.revision===job.revision;}
 function counts(){return {background:job.rows.filter(r=>r.background!=='none').length,floors:job.rows.filter(r=>r.floorMark).length,marked:job.rows.filter(r=>r.background!=='none'||r.floorMark||r.extraMark).length,issues:job.rows.filter(r=>r.issues?.length).length};}
 function remoteCount(){return Object.keys(remoteMap(job)).length;}
-function updateButton(){return `<button class="icon-button update-control" data-act="check-update" aria-label="檢查更新" title="檢查更新">${icon('refresh')}<span class="update-dot" hidden></span></button>`;}
-function refreshUpdateState(){const state=updater?.state||'idle';document.querySelectorAll('[data-act="check-update"]').forEach(el=>{const ready=state==='available';el.disabled=['checking','applying'].includes(state);el.setAttribute('aria-label',ready?'立即更新':state==='applying'?'更新中':'檢查更新');el.title=ready?'有新版，儲存後更新':state==='checking'?'檢查更新中':'檢查更新';el.querySelector('.update-dot').hidden=!ready;});offlineReady=updater?.hasOfflineShell||offlineReady;const foot=document.querySelector('.privacy-foot');if(foot)foot.textContent=offlineReady?'本機保存 · 可離線 · 試用版':'本機保存 · 試用版';}
+function updateButton(){return `<button class="icon-button update-control" data-act="check-update" aria-label="檢查並更新" title="檢查並更新">${icon('refresh')}<span class="update-label">更新</span><span class="update-dot" hidden></span></button>`;}
+function refreshUpdateState(){const state=updater?.state||'idle';document.querySelectorAll('[data-act="check-update"]').forEach(el=>{const ready=state==='available',label={checking:'檢查中',downloading:'下載中',applying:'更新中'}[state]||'更新';el.disabled=state==='applying';el.setAttribute('aria-label',ready?'立即更新':state==='applying'?'更新中':'檢查並更新');el.title=ready?'有新版，儲存後更新':label==='更新'?'檢查並更新':label;el.querySelector('.update-label').textContent=label;el.querySelector('.update-dot').hidden=!ready;});offlineReady=updater?.hasOfflineShell||offlineReady;const foot=document.querySelector('.privacy-foot');if(foot)foot.textContent=offlineReady?'本機保存 · 可離線 · 試用版':'本機保存 · 試用版';}
 function render(){
  const title={data:'資料',marks:'標記',settings:'時間設定',results:'結果'}[tab];
  const subtitle={data:'匯入或檢視元件資料。',marks:'篩選、選取，再套用標記或遠距。',settings:'設定時段、規則與遠距組合。',results:'檢視試排時間與逐筆間隔。'}[tab];
@@ -142,7 +142,7 @@ async function action(name,el){
  case 'tab':changeTab(el.dataset.tab);break;
  case 'to-marks':changeTab('marks');break;case 'to-settings':changeTab('settings');break;
  case 'close-modal':closeModal();break;case 'help':help();break;
- case 'check-update':if(updater?.state==='available')await updater.apply();else if(updater)await updater.check(true);break;
+ case 'check-update':await updater?.update();break;
  case 'import':document.getElementById('source-file').click();break;
  case 'restore':closeModal();document.getElementById('project-file').click();break;
  case 'accept-import':await acceptImport();break;
@@ -190,12 +190,14 @@ document.addEventListener('submit',event=>{event.preventDefault();try{ensureIdle
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){clearTimeout(saveTimer);persist();}});
 window.addEventListener('pagehide',()=>{solver?.terminate();importer?.terminate();});
 async function start(){try{jobs=await getJobs();let last;try{last=localStorage.getItem('log-active');viewMode=localStorage.getItem('log-row-view')||'table';showContext=localStorage.getItem('log-filter-context')==='1';}catch{}if(!['table','cards'].includes(viewMode))viewMode='table';job=structuredClone(jobs.find(j=>j.id===last)||jobs.sort((a,b)=>b.updated.localeCompare(a.updated))[0]||blankJob());saveState=jobs.length?'已存於此裝置':'尚未儲存';}catch{job=blankJob();saveState='此瀏覽器無法儲存';}render();
- updater=createUpdater({serviceWorker:navigator.serviceWorker,isBusy:()=>busy||Boolean(importer),hasOpenEditor:()=>modal.open,
+ updater=createUpdater({serviceWorker:navigator.serviceWorker,isBusy:()=>busy||Boolean(importer),hasOpenEditor:()=>modal.open,canAutoUpdate:()=>updateIdle,
   save:async()=>{clearTimeout(saveTimer);return await persist();},
   onStatus:(state,message)=>{refreshUpdateState();if(['available','applying','error','offline','unsupported'].includes(state))toast(message);else if(state==='current'&&document.activeElement?.dataset.act==='check-update')toast(message);}
  });
- await updater.check();
- document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')updater.check();});
+ for(const event of ['pointerdown','keydown','input'])document.addEventListener(event,()=>{updateIdle=false;},{capture:true});
+ await updater.update({automatic:true});
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')updateIdle=true;else updater.update({automatic:true});});
+ window.addEventListener('pageshow',event=>{if(event.persisted)updater.update({automatic:true});});
  window.addEventListener('online',()=>updater.check(true));
 }
 

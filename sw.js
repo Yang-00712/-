@@ -1,4 +1,4 @@
-const CACHE='log-mobile-shell-8';
+const CACHE='log-mobile-shell-10';
 const ASSETS=['./','./index.html','./app.css','./app.mjs','./domain.mjs','./storage.mjs','./validation.mjs','./update.mjs','./import-worker.js','./solver-worker.mjs','./vendor/xlsx.mini.min.js','./manifest.webmanifest','./icon-192.png','./icon-192.png?v=cat-right','./icon-512.png','./icon-512.png?v=cat-right'];
 // Atomic app-shell install. An update waits until old tabs close; no mid-job reload.
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(path=>new Request(path,{cache:'reload'}))))));
