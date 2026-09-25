@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULT_SETTINGS, PLANTS, parseClock, formatClock, formatDuration, parseRows, makeDemo, autocolor, validateSettings, solvePreview} from '../domain.mjs';
+import {DEFAULT_SETTINGS, PLANTS, parseClock, formatClock, formatDuration, parseRows, makeDemo, isSpecial, autocolor, validateSettings, solvePreview} from '../domain.mjs';
 
 test('clock and duration utilities are strict',()=>{
   assert.equal(parseClock('0820'),30000); assert.equal(parseClock('13:06'),47160);
@@ -60,6 +60,38 @@ test('autocolor inserts blue before 29 overflow only at a complete group start',
 test('settings validator reports bad order and ranges',()=>{
   assert.deepEqual(validateSettings(DEFAULT_SETTINGS),[]);
   assert.ok(validateSettings({...DEFAULT_SETTINGS,amEnd:'07:00',crossMax:10}).length>=2);
+});
+
+test('CPRSAI special detection reads form only and is case insensitive',()=>{
+  for(const code of ['C','P','R','S','A','I']){
+    assert.equal(isSpecial({form:code}),true,code);
+    assert.equal(isSpecial({form:code.toLowerCase()}),true,code.toLowerCase());
+  }
+  assert.equal(isSpecial({form:'cPrSaI'}),true);
+  assert.equal(isSpecial({form:'ZZZ'}),false);
+  assert.equal(isSpecial({form:'',equipment:'CPRSAI'}),false);
+});
+
+test('preview applies one 60-second CPRSAI part across first, ordinary, background, remote and floor bounds',()=>{
+  const demo=makeDemo();
+  for(const index of [0,1,2,3,4])demo.rows[index]={...demo.rows[index],form:'cPrSaI'};
+  const result=solvePreview(demo.rows,DEFAULT_SETTINGS,{r4:{min:20,max:20,name:'遠距測試'}},{seed:741});
+  assert.equal(result.ok,true,result.errors?.join(';'));
+  const expected={
+    r1:[240,300,'進場'],
+    r2:[93,110,'普通'],
+    r3:[451,610,'背景'],
+    r4:[113,130,'遠距測試'],
+    r5:[813,1054,'樓層移動'],
+  };
+  for(const [id,[lo,hi,context]] of Object.entries(expected)){
+    const row=result.rows.find(item=>item.id===id);
+    assert.ok(row,`${id} 應存在`);
+    assert.ok(row.interval>=lo&&row.interval<=hi,`${id} ${row.interval} 應在 ${lo}–${hi}`);
+    assert.equal(row.parts.filter(part=>part.startsWith('CPRSAI ')).length,1,`${id} CPRSAI 只加一次`);
+    assert.match(row.parts.join('|'),new RegExp(context));
+    assert.ok(row.parts.includes('CPRSAI 1:00–1:00'));
+  }
 });
 
 test('demo is synthetic, mobile-sized and preview is independently checked',()=>{

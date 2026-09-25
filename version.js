@@ -1,1 +1,1 @@
-globalThis.LOG_RELEASE = Object.freeze({"version":"r12","released":"2026-09-25"});
+globalThis.LOG_RELEASE = Object.freeze({"version":"r13","released":"2026-09-25"});

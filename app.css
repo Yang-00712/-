@@ -25,6 +25,7 @@ html,body{max-width:100%;overflow-x:hidden}.brand-logo{width:42px;height:42px;bo
 @media(max-width:360px){.data-row .row-main{grid-template-columns:18px 21px minmax(0,1fr) 26px;padding:10px;gap:5px}.data-row .row-code .raw-e{font-size:12px}.row-metrics{gap:6px}.row-metrics .row-time strong{font-size:13px}}
 .icon-button.update-control { display:inline-flex; align-items:center; gap:5px; width:auto; padding-inline:8px; }
 .update-label { font-size:12px; white-space:nowrap; }
+.special-form{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:2px 5px;color:#ad256b;font-weight:750}.special-form small{font-size:10px;font-weight:650;white-space:nowrap;color:inherit}
 
 /* Version details stay compact and update in place while the dialog is open. */
 .info-dialog{display:grid;gap:16px}.version-grid{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 16px;margin:0;padding:15px;border:1px solid var(--line);border-radius:12px;background:#f8faf7}.version-grid dt{color:var(--muted);font-size:12px}.version-grid dd{margin:0;color:var(--deep);font-weight:750;overflow-wrap:anywhere}.info-dialog .foot-actions{margin-top:0}

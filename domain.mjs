@@ -190,7 +190,7 @@ export function makeDemo() {
   return { rows: autocolor(Array.from({length: 64}, (_, i) => demoRow(i))), plant: '示範廠', name: '手機操作示範' };
 }
 
-function isSpecial(row) {
+export function isSpecial(row) {
   const form = String(row.form ?? '').trim().toUpperCase();
   return [...SPECIAL].some(code => form.includes(code));
 }
