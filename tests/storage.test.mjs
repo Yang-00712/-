@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {durationInput,validateProject,remoteMap,csvCell,matchSheetName} from '../storage.mjs';
 import {DEFAULT_SETTINGS,makeDemo} from '../domain.mjs';
-test('duration accepts mm:ss or decimal minutes, never invalid seconds',()=>{assert.equal(durationInput('2:20'),140);assert.equal(durationInput('3.5'),210);assert.equal(durationInput('0'),0);assert.throws(()=>durationInput('2:60'));assert.throws(()=>durationInput('-3'));});
+test('duration accepts phone-friendly minute-second forms',()=>{
+ assert.equal(durationInput('1.30'),90);assert.equal(durationInput('130'),90);assert.equal(durationInput('1:30'),90);
+ assert.equal(durationInput('2.22'),142);assert.equal(durationInput('222'),142);assert.equal(durationInput('2.2'),122);
+ assert.equal(durationInput('1'),60);assert.equal(durationInput('12'),720);assert.equal(durationInput('1234'),754);assert.equal(durationInput('0'),0);assert.equal(durationInput('120:00'),7200);
+ assert.throws(()=>durationInput('2:60'));assert.throws(()=>durationInput('260'));assert.throws(()=>durationInput('1.234'));assert.throws(()=>durationInput('120:01'));assert.throws(()=>durationInput('-3'));
+});
 test('import strips claimed results and rejects duplicate row IDs',()=>{const p={schema:1,name:'測試',...makeDemo(),settings:{...DEFAULT_SETTINGS},remotes:[],result:{ok:true}};const safe=validateProject(p);assert.equal(safe.result,null);const duplicate=structuredClone(p);duplicate.rows[1].id=duplicate.rows[0].id;assert.throws(()=>validateProject(duplicate));});
 test('single-row override does not alter group settings',()=>{const p={remotes:[{name:'遠距',rowIds:['r1','r2'],min:140,max:240}],overrides:{r1:{min:180,max:300}}};assert.equal(remoteMap(p).r1.min,180);assert.equal(remoteMap(p).r2.min,140);assert.equal(p.remotes[0].min,140);});
 test('import validates remote ownership, ranges and row markup',()=>{const p={schema:1,name:'測試',...makeDemo(),settings:{...DEFAULT_SETTINGS},remotes:[{id:'g',name:'跨區',rowIds:['missing'],min:140,max:240}]};assert.throws(()=>validateProject(p));p.remotes=[];p.rows[0].background='<script>';assert.throws(()=>validateProject(p));});

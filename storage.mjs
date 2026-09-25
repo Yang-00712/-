@@ -17,6 +17,14 @@ export function validateProject(data){
   return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant:String(data.plant||'手動').slice(0,40),rows:structuredClone(data.rows),settings,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo)};
 }
 export function remoteMap(job){const map={};for(const g of job.remotes)for(const id of g.rowIds)map[id]={min:g.min,max:g.max,name:g.name};for(const [id,v] of Object.entries(job.overrides||{}))map[id]={...v,name:map[id]?.name||'單筆遠距'};return map;}
-export function durationInput(value){const s=String(value).trim();if(/^\d+(\.\d+)?$/.test(s)){const n=Math.round(Number(s)*60);if(n<=7200)return n;}const m=s.match(/^(\d{1,3}):([0-5]\d)$/);if(m){const n=+m[1]*60+(+m[2]);if(n<=7200)return n;}throw new Error('請輸入分:秒，例如 2:20；也可填 3 或 3.5 分鐘。');}
+export function durationInput(value){
+  const s=String(value).trim();let minutes,seconds;
+  if(/^\d{1,2}$/.test(s)){minutes=Number(s);seconds=0;}
+  else if(/^\d{3,4}$/.test(s)){minutes=Number(s.slice(0,-2));seconds=Number(s.slice(-2));}
+  else {const match=s.match(/^(\d{1,3})[:.](\d{1,2})$/);if(match){minutes=Number(match[1]);seconds=Number(match[2]);}}
+  const total=minutes*60+seconds;
+  if(Number.isInteger(minutes)&&Number.isInteger(seconds)&&seconds<60&&total>=0&&total<=7200)return total;
+  throw new Error('請輸入分秒，例如 1.30、130 或 1:30；2.2 代表 2:02。');
+}
 export function csvCell(value){let s=String(value??'');if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
 export function matchSheetName(name,query){const normalize=s=>String(s).normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,'');return normalize(name).includes(normalize(query));}
