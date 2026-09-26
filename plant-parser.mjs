@@ -27,6 +27,80 @@ const RULES=Object.freeze({
   '易增':{mode:'fixed',source:'E',region:[1,1],floor:[2,2],equipment:[4,6],form:['E',3],groupTail:4},
 });
 
+const FIELD_LABELS=Object.freeze({
+  source:'解析來源',regionStart:'區域起點',regionLength:'區域長度',floorStart:'樓層起點',floorLength:'樓層長度',
+  equipmentStart:'設備起點',equipmentLength:'設備長度',formSource:'型式來源',formLength:'型式長度',
+  groupTail:'小組後方保留碼數',defaultFloor:'未標示時預設樓層',
+});
+
+function field(key,value,min,max){return {key,label:FIELD_LABELS[key],type:key==='source'||key==='formSource'?'source':'number',...(min==null?{}:{min,max}),value};}
+
+export function plantRuleFields(plant){
+  const rule=RULES[plant];if(!rule||rule.mode==='manual')return [];
+  if(rule.mode==='fixed')return [
+    field('source',rule.source),field('regionStart',rule.region[0],1,99),field('regionLength',rule.region[1],1,99),
+    field('floorStart',rule.floor[0],1,99),field('floorLength',rule.floor[1],1,99),
+    field('equipmentStart',rule.equipment[0],1,99),field('equipmentLength',rule.equipment[1],1,99),
+    field('formSource',rule.form[0]),field('formLength',rule.form[1],1,99),field('groupTail',rule.groupTail,0,99),
+  ];
+  const fields=[];
+  if(Object.hasOwn(rule,'equipmentLength'))fields.push(field('equipmentLength',rule.equipmentLength,rule.mode==='cpc'?0:1,99));
+  if(Object.hasOwn(rule,'defaultFloor'))fields.push(field('defaultFloor',rule.defaultFloor,rule.mode==='long'?0:1,99));
+  if(rule.form){fields.push(field('formSource',rule.form[0]),field('formLength',rule.form[1],1,99));}
+  if(['dalian','cpc'].includes(rule.mode))fields.push(field('groupTail',rule.groupTail,0,99));
+  return fields;
+}
+
+export function normalizePlantRule(plant,input={}){
+  if(input==null)input={};
+  if(typeof input!=='object'||Array.isArray(input))throw new Error('廠別規則必須是欄位物件');
+  const fields=plantRuleFields(plant),byKey=new Map(fields.map(item=>[item.key,item])),result={};
+  for(const [key,raw] of Object.entries(input)){
+    const meta=byKey.get(key);if(!meta)throw new Error(`${plant} 不支援規則欄位 ${key}`);
+    if(meta.type==='source'){
+      const value=String(raw??'').trim().toUpperCase();if(!['D','E'].includes(value))throw new Error(`${meta.label}只能是 D 或 E`);result[key]=value;
+    }else{
+      const text=typeof raw==='string'?raw.trim():raw,value=typeof text==='number'?text:Number(text);
+      if(text===''||!Number.isInteger(value)||value<meta.min||value>meta.max)throw new Error(`${meta.label}須為 ${meta.min}～${meta.max} 的整數`);
+      result[key]=value;
+    }
+  }
+  return result;
+}
+
+function configuredRule(plant,overrides){
+  const values=normalizePlantRule(plant,overrides),original=RULES[plant];if(!original)return null;
+  const rule={...original,region:original.region?[...original.region]:undefined,floor:original.floor?[...original.floor]:undefined,equipment:original.equipment?[...original.equipment]:undefined,form:original.form?[...original.form]:undefined};
+  for(const [key,value] of Object.entries(values)){
+    if(key==='source')rule.source=value;
+    else if(key==='formSource')rule.form[0]=value;
+    else if(key==='formLength')rule.form[1]=value;
+    else if(key==='regionStart')rule.region[0]=value;
+    else if(key==='regionLength')rule.region[1]=value;
+    else if(key==='floorStart')rule.floor[0]=value;
+    else if(key==='floorLength')rule.floor[1]=value;
+    else if(key==='equipmentStart')rule.equipment[0]=value;
+    else if(key==='equipmentLength'&&rule.mode==='fixed')rule.equipment[1]=value;
+    else rule[key]=value;
+  }
+  return rule;
+}
+
+export function describePlantRule(plant,overrides={}){
+  const rule=configuredRule(plant,overrides);
+  if(!rule)return '未建立內建規則，需人工解析。';
+  if(rule.mode==='manual')return `${plant} 只提供有限原碼欄位，仍需人工解析與人工時間。`;
+  if(rule.mode==='fixed')return `固定位置解析 ${rule.source}：區域 ${rule.region[0]}+${rule.region[1]}、樓層 ${rule.floor[0]}+${rule.floor[1]}、設備 ${rule.equipment[0]}+${rule.equipment[1]}；小組依 E 尾端保留 ${rule.groupTail} 碼，型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  if(rule.mode==='aro3')return `ARO3 依 19／20 字變長位置解析樓層、設備與小組；型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  if(rule.mode==='fas')return `FAS 依已知最長區域前綴與樓層 F 分段，設備取 ${rule.equipmentLength} 碼；型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  if(rule.mode==='dalian')return `大連保留 M03／M04 分支解析，設備取 ${rule.equipmentLength} 碼、尾端保留 ${rule.groupTail} 碼；型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  if(rule.mode==='north')return `南北儲保留 BZ／OX_／SM_／MX_／TOL／HAC 分支，設備取 ${rule.equipmentLength} 碼；型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  if(rule.mode==='cpc')return `中油保留變長樓層與設備邊界判定；設備長度 0 代表自動判定，未標樓層預設 ${rule.defaultFloor}F，尾端保留 ${rule.groupTail} 碼。`;
+  if(rule.mode==='long')return `${plant} 保留油類變長、連字號、括號與短碼別名核對；未標樓層${rule.defaultFloor?`預設 ${rule.defaultFloor}F`:'不預設'}，型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  if(rule.mode==='south')return `南儲保留變長設備、單碼小組與 GF 尾碼判定；型式取 ${rule.form[0]} 尾 ${rule.form[1]} 碼。`;
+  return `${plant} 使用內建位置分段規則。`;
+}
+
 const FAS_PREFIXES=Object.freeze([
   ['PO1','PO1'],['PO2','PO2'],['PT1','PT1'],['PT2','PT2'],['WW','WW'],['OF','OF'],
 ]);
@@ -223,8 +297,8 @@ export function plantSupport(plant){
   return {mode:'auto',label:rule.mode==='fixed'?'固定格式':rule.mode==='aro3'?'ARO3變長格式':rule.mode==='fas'?'最長前綴':'位置分段'};
 }
 
-export function parsePlantFields(dValue,eValue,plant){
-  const d=exact(dValue),e=exact(eValue),issues=[],rule=RULES[plant];let parsed;
+export function parsePlantFields(dValue,eValue,plant,overrides={}){
+  const d=exact(dValue),e=exact(eValue),issues=[],rule=configuredRule(plant,overrides);let parsed;
   if(!rule||rule.mode==='manual')parsed=manual(d,e,plant,rule,issues);
   else if(rule.mode==='fixed')parsed=fixed(d,e,rule,issues);
   else if(rule.mode==='aro3')parsed=aro3(e,issues);

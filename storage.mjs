@@ -1,6 +1,8 @@
 import {DEFAULT_SETTINGS,validateSettings} from './domain.mjs';
+import {normalizeImportParams} from './import-settings.mjs';
 import {DEFAULT_MEASUREMENT_SETTINGS,normalizeMeasurementSettings} from './measurements.mjs';
 import {normalizeManualPlan,normalizeManualSettings} from './manual-time.mjs';
+import {normalizePlantRule} from './plant-parser.mjs';
 const DB='log-mobile', STORE='jobs';
 export async function database(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DB,1);request.onupgradeneeded=()=>request.result.createObjectStore(STORE,{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);request.onblocked=()=>reject(new Error('請先關閉另一個舊版工作台，再重新開啟。'));});}
 async function transaction(mode,fn){const db=await database();try{return await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,mode);let value;const request=fn(tx.objectStore(STORE));request.onsuccess=()=>{value=request.result;};tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('儲存中止'));});}finally{db.close();}}
@@ -21,8 +23,15 @@ export function validateProject(data){
   const manualSettings=data.manualSettings==null?null:normalizeManualSettings(data.manualSettings);
   if(manualPlan&&manualPlan.settings.amCount>rows.length)throw new Error('手動上午筆數超過元件總數。');
   if(manualPlan?.schema===4&&manualPlan.rowCount!==rows.length)throw new Error('手動候選的元件總數與卡夾不符。');
+  const plant=String(data.plant||'手動').slice(0,40);
+  let parserRules,importParams;
+  if(Object.hasOwn(data,'parserRules')){
+    if(!data.parserRules||typeof data.parserRules!=='object'||Array.isArray(data.parserRules))throw new Error('廠別規則格式錯誤。');
+    parserRules=normalizePlantRule(plant,data.parserRules);
+  }
+  if(Object.hasOwn(data,'importParams'))importParams=normalizeImportParams(data.importParams,plant);
   // Imported result claims are never trusted; always recompute locally.
-  return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant:String(data.plant||'手動').slice(0,40),rows,settings,measurementSettings,timeMode,manualPlan,manualSettings,manualRevision:0,manualResult:null,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo)};
+  return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant,rows,settings,measurementSettings,timeMode,manualPlan,manualSettings,manualRevision:0,manualResult:null,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo),...(parserRules===undefined?{}:{parserRules}),...(importParams===undefined?{}:{importParams})};
 }
 export function remoteMap(job){const map={};for(const g of job.remotes)for(const id of g.rowIds)map[id]={min:g.min,max:g.max,name:g.name};for(const [id,v] of Object.entries(job.overrides||{}))map[id]={...v,name:map[id]?.name||'單筆遠距'};return map;}
 export function durationInput(value){

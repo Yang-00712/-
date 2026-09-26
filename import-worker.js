@@ -16,11 +16,11 @@ self.onmessage=({data})=>{try{
     workbook={SheetNames:workbook.SheetNames};
   }else if(data.action==='sheet'){
     if(!sourceBuffer||!workbook.SheetNames.includes(data.name))throw new Error('找不到工作頁。');
-    const first=Math.max(1,Math.min(100000,Number(data.first)||3)),count=Math.max(1,Math.min(448,Number(data.count)||400));const rows=[];
+    const first=Math.max(1,Math.min(100000,Number(data.first)||3)),count=Math.max(1,Math.min(448,Number(data.count)||400));const rows=[];const columns=[data.bColumn||'B',data.cColumn||'C'];if(columns.some(c=>! /^[A-Z]{1,3}$/.test(c)||XLSX.utils.decode_col(c)>16383)||columns[0]===columns[1])throw new Error('來源欄設定不正確。');
     const selected=XLSX.read(sourceBuffer,{type:'array',sheets:[data.name],sheetRows:first+count,cellFormula:false,cellHTML:false,cellStyles:false,bookVBA:false,cellText:true});
     const sheet=selected.Sheets[data.name];
     const value=(column,r)=>{const c=sheet[column+r];if(!c)return '';if(c.t==='e')throw new Error('來源 '+column+r+' 是 Excel 錯誤值。');return typeof c.v==='number'?(c.w??String(c.v)):String(c.v??'');};
-    for(let r=first;r<first+count;r++){const b=value('B',r),c=value('C',r);if(!b&&!c){if(rows.length)break;continue;}rows.push({b,c,sourceRow:r});}
+    for(let r=first;r<first+count;r++){const b=value(columns[0],r),c=value(columns[1],r);if(!b&&!c){if(rows.length)break;continue;}rows.push({b,c,sourceRow:r});}
     postMessage({type:'rows',rows,requestId:data.requestId});
   }
 }catch(error){postMessage({type:'error',message:error.message||'無法讀取活頁簿。'});}};

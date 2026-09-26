@@ -330,8 +330,8 @@ export function setManualMappedTimes(plan,rows,settings){
     let previous=parseClock(settings[period+'Start']);
     const end=parseClock(next.settings[period+'End']);
     for(let i=0;i<half.length;i++){
-      if(!Number.isInteger(half[i].time)||half[i].time<=previous||half[i].time>end)throw new Error('修正方案時刻必須依序增加且在候選時段內');
-      integerIn(half[i].time-previous,1,7200,'間隔秒數');
+      if(!Number.isInteger(half[i].time)||(i===0?half[i].time<previous:half[i].time<=previous)||half[i].time>end)throw new Error('修正方案時刻必須依序增加且在候選時段內');
+      integerIn(half[i].time-previous,i===0?0:1,i===0?86400:7200,'間隔秒數');
       if(i===0)next.adjustments[period][0]=(next.adjustments[period][0]||0)+half[i].time-active[0].time;
       else assignManualSpan(next,period,active[i-1].index,active[i].index,half[i].time-previous);
       previous=half[i].time;

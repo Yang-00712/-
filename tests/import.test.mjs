@@ -18,6 +18,9 @@ test('bundled XLSX worker lists sheets and imports only selected B/C rows',()=>{
  assert.equal(messages.at(-1).visibility[1].hidden,1);assert.equal(messages.at(-1).visibility[2].hidden,2);
  scope.onmessage({data:{action:'sheet',name:'合成資料',first:3,count:400}});
  assert.equal(messages.at(-1).type,'rows');assert.equal(messages.at(-1).rows.length,2);assert.equal(messages.at(-1).rows[0].b,'SYNTH-0001');assert.equal(messages.at(-1).rows[0].c,'9991FTESTXXXX01LF010');
+ scope.onmessage({data:{action:'sheet',name:'合成資料',first:4,count:1,bColumn:'C',cColumn:'A'}});
+ assert.equal(messages.at(-1).rows.length,1);assert.equal(messages.at(-1).rows[0].b,'9991FTESTXXXX01LV020');assert.equal(messages.at(-1).rows[0].c,'2');
+ scope.onmessage({data:{action:'sheet',name:'合成資料',first:3,count:1,bColumn:'XFE',cColumn:'B'}});assert.equal(messages.at(-1).type,'error');
  for(const [name,value] of [['31(200.300)','HIDDEN-B'],['中文（樓層）','VERY-B']]){scope.onmessage({data:{action:'sheet',name,first:1,count:400,requestId:7}});assert.equal(messages.at(-1).rows[0].b,value);assert.equal(messages.at(-1).requestId,7);}
  scope.onmessage({data:{action:'sheet',name:'不存在',first:3,count:400}});assert.equal(messages.at(-1).type,'error');
 });

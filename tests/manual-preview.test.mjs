@@ -48,11 +48,10 @@ test('preview handles deleting entry, separate runs, old exclusions and capacity
   assert.equal(p.insufficient,true);assert.equal(p.available,1);
 });
 
-test('interval guide refuses unknown floors and uses afternoon entry from 1F',()=>{
+test('interval guide refuses unknown floors and treats afternoon first row as a start timestamp',()=>{
   const {job}=fixture();job.rows[4].floor=5;job.rows[6].floor=null;
   const guides=manualIntervalGuides(job.rows,job.settings,4,{});
-  assert.ok(guides[4].parts.some(x=>x.startsWith('進場')));
-  assert.ok(guides[4].parts.some(x=>x.startsWith('上樓')));
+  assert.deepEqual(guides[4],{start:true,min:0,max:0,parts:[]});
   assert.match(guides[6].error,/樓層待確認/);
   assert.match(guides[7].error,/樓層待確認/);
 });

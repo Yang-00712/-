@@ -69,7 +69,7 @@ test('bulk time acceptance preserves deleted indexes and reproduces independentl
  assert.deepEqual(accepted.excluded,plan.excluded);
  const actual=withSessionBackgrounds(manualDraftRows(job,accepted));
  assert.deepEqual(actual.map(row=>row.time),proposal.rows.map(row=>row.time));
- assert.equal(inspectManualSchedule(actual,job.settings).rulesOk,true);
+ assert.equal(inspectManualSchedule(actual,job.settings,{},{manualStart:true}).rulesOk,true);
  assert.equal(mapManualTimes(job.rows,accepted).length,200);
 });
 

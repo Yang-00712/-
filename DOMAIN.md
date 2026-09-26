@@ -20,11 +20,11 @@
 
 `cloudflare/worker.mjs` 使用KV binding `LOG_TXT` 保存密文，期限從第一次成功接受起12小時；GET與相同內容的重送不續期，同ID不同內容拒絕。上傳request body上限512 KiB，正式CORS來源只有 `https://yang-00712.github.io`；本機4177／4178需明確開發旗標。`LOG_RATE` binding存在且部署為30次／60秒時，依Cloudflare提供的來源IP限制POST／GET；binding缺席時程式不宣稱有限流。CORS與限流不是認證，KV跨PoP並發首次寫入也不提供強原子保證。
 
-`manual-time.mjs` 是獨立手動候選，沒有呼叫自動求解器。基礎＋Rand取整數秒，相容schema 2使用上午／下午獨立抽樣序列（steps／pmSteps），新UI改用schema 4分階段；舊schema 1共用序列讀取後保持原值；排除索引各自保存，刪除只跨過時刻並累加間隔，不移除元件。映射需完整足量、保持元件次序；UI依主設定重算首筆實際等待。`inspectManualSchedule` 重用逐列上下限、完整小組、樓層、返回及80窗核對，不修改手動時刻。`manualResult.ok` 表示成功套用，`rulesOk` 才是規則通過；不能混同。
+`manual-time.mjs` 是獨立手動候選，沒有呼叫自動求解器。基礎＋Rand取整數秒，相容schema 2使用上午／下午獨立抽樣序列（steps／pmSteps），新UI改用schema 4分階段；舊schema 1共用序列讀取後保持原值；排除索引各自保存，刪除只跨過時刻並累加間隔，不移除元件。映射需完整足量、保持元件次序；首筆以所選時刻為起點，內部保留相對主設定起點的非負delta供時間鏈核對，UI不將其顯示為作業間隔。`inspectManualSchedule` 重用逐列上下限、完整小組、樓層、返回及80窗核對，不修改手動時刻。`manualResult.ok` 表示成功套用，`rulesOk` 才是規則通過；不能混同。
 
 `job-rows.mjs` 的 `activeResult` 依 `timeMode` 選擇獨立的 `result`／`manualResult`。來源修訂使兩者過期；候選草稿修訂不改已套用結果。手動候選上限10000步、撤回20步；不足筆數、錯誤索引與非法卡夾皆拒絕，不截短。
 
-`manualIntervalGuides` 直接讀取求解與驗證共用的逐列範圍，包含首筆、背景、樓層、CPRSAI與遠距，未知樓層不猜測。`manual-preview.mjs` 將保留時刻對應目前元件，選取刪除時預覽新映射；首筆間隔從主設定開始計算。新舊schema皆經逐時段終點、步長、排除索引驗證；不把舊保存候選偷偷重抽。
+`manualIntervalGuides` 直接讀取求解與驗證共用的逐列範圍，首筆回start標記，其餘包含背景、樓層、CPRSAI與遠距，未知樓層不猜測。`manual-preview.mjs` 將保留時刻對應目前元件，選取刪除時預覽新映射；首筆不要求進場／樓層／特殊／遠距間隔；從第二筆開始依實際前一筆核算。新舊schema皆經逐時段終點、步長、排除索引驗證；不把舊保存候選偷偷重抽。
 
 手動schema 3保留已驗證的亂數底稿並加入 `adjustments.am/pm` 整數秒差映射。普通步驟套差後至少1秒，首個候選允許相對候選起點前移但不跨出當日；排除索引依原池長度驗證（包含縮短間隔後可能進入時段的尾端候選），延長後暫時超出終點的記號不遺失。`setManualInterval` 修改保留間隔，縮短合併段會分配到被跨過的小步，確保還原後仍按時序。`setManualMappedTimes` 一次回填調整提案，避免逐筆中途延長把後續候選擠掉。舊schema唯讀保持原值，第一次修改才升級。`manualDraftRows` 用完整有效候選依來源次序生成暫存序列；G由 `windowReport` 即時驗算，無效或不足窗口不假造數字。
 
@@ -35,3 +35,7 @@
 TXT純函式與合成測試通過只代表目前格式契約；Cloudflare線上部署、實體iPhone下載／取件，以及各廠資料在2027-10原生Excel的逐檔輸出仍是不同驗收層，不能互相替代。
 
 手動schema 4加入phase（am／pm-pending／pm）、rowCount、cutIndex與pmSample。createManualMorningPlan只抽上午，pmSteps在明確生成下午前為null；上午草稿按有效時刻動態映射元件。confirmManualMorning以保留時刻索引固定元件切點，createManualAfternoon才抽剩餘元件的下午候選。重開上午保留AM底稿和調整，清除PM；既有schema不自動遷移。normalizeManualPlan重算切點對應筆數，卡夾匯入核對rowCount。上午確認後一般編輯鎖定，整日調整僅經既有明確提案採用；setManualInterval拒絕會讓下午所需元件超出截止的修改。
+
+手動驗證由inspectManualSchedule第四參數manualStart:true明確啟用；預設與自動試排仍要求原進場規則。TXT依job.timeMode選擇相同驗證。手動首筆仍驗非負整數delta、場次界線與時間鏈，首筆底色與其他結構檢查保留；調整器固定兩半日既有起點，不以進場秒數取代。G仍為本筆到往後第80筆的實際80間隔，末80筆沒有新窗口。
+
+plantRuleFields／normalizePlantRule只開放各模式實際讀取的欄位，複製內建規則套用白名單override。parseRows第四參數傳rules；reparsePendingRows第四參數all:true僅供明確整卡重判，預設仍只pending。選擇來源欄後worker將D來源裝入b、E来源裝入c，UI抵銷parseRows既有油類反轉再套用使用者reverse，避免二次反轉。來源欄驗證A～XFD且不同，起始列1～100000、筆數1～448。storage只在輸入存在時保存經驗證parserRules/importParams，保持舊卡夾相容。plant-profiles.mjs按廠保存本機設定；新卡夾帶當次設定供備份攜帶。

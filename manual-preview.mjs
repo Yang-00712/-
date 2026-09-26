@@ -16,8 +16,8 @@ export function manualHalfRows(job,plan,period) {
     const interval=offset===0?candidate.time-parseClock(job.settings[period+'Start']):candidate.interval;
     const guide=target?guides[sourceIndex]:null;
     return {...candidate,interval,sourceIndex,target,guide,first:offset===0,
-      deficit:guide&&!guide.error?Math.max(0,guide.min-interval):null,
-      excess:guide&&!guide.error?Math.max(0,interval-guide.max):null};
+      deficit:guide&&!guide.error?(offset===0?0:Math.max(0,guide.min-interval)):null,
+      excess:guide&&!guide.error?(offset===0?0:Math.max(0,interval-guide.max)):null};
   });
   const start=parseClock(job.settings[period+'Start']),end=parseClock(job.settings[period+'End']);
   const windows=windowReport(list.filter(row=>row.target).map(row=>({...row.target,time:row.time>=start&&row.time<=end?row.time:null,period:period==='am'?'上午':'下午'})),job.settings.mode);

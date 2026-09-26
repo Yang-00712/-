@@ -31,7 +31,7 @@ export function createTxtOutput({getJob,ensureIdle,persist,showModal,esc,button,
   if(!baseRows.length)add('尚未匯入元件資料。');
   if(!resultIsCurrent(job)){needsTime=true;add(job.timeMode==='manual'?'手動時間尚未套用，或來源／設定已變動。':'目前設定尚未完成有效試排，或結果已過期。');}
   else{
-   try{rows=currentJobRows(job);const review=inspectManualSchedule(rows,job.settings,remoteMap(job));
+   try{rows=currentJobRows(job);const review=inspectManualSchedule(rows,job.settings,remoteMap(job),{manualStart:job.timeMode==='manual'});
     if(!review.rulesOk){const details=[...(review.errors||[]),...(review.checks||[]).filter(item=>item?.ok===false).map(item=>item.detail||item.label||item.name)];if(details.length)details.forEach(add);else add('時間或背景檢查尚未通過。');needsTime=true;}
    }catch(error){add(error?.message||'時間或背景檢查失敗。');needsTime=true;}
   }

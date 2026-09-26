@@ -116,7 +116,7 @@ function ordinaryGuide(guide){return guide.parts?.length===1&&guide.parts[0].sta
 export function adjustManualRows(rows,settings,remotes={},options={}){
   const source=Array.isArray(rows)?rows:[],s={...DEFAULT_SETTINGS,...(settings??{})};
   let beforeReview=null,beforeWindows=null;
-  try{beforeReview=source.length?inspectManualSchedule(source,s,remotes):null;beforeWindows=source.length?windowReport(source,s.mode):null;}
+  try{beforeReview=source.length?inspectManualSchedule(source,s,remotes,{manualStart:true}):null;beforeWindows=source.length?windowReport(source,s.mode):null;}
   catch(error){return failure([error.message],beforeWindows,beforeReview);}
   const errors=sourceErrors(source,s);
   if(beforeReview)for(const check of beforeReview.checks)if(!check.ok&&!check.label.includes('時間規則／80窗'))errors.push(`${check.label}：${check.detail}`);
@@ -136,13 +136,14 @@ export function adjustManualRows(rows,settings,remotes={},options={}){
     const anchor=parseClock(s[startName]),deadline=parseClock(s[endName]);
     const targetLo=deadline-s[earlyMaxName]-anchor-returnSeconds,targetHi=deadline-s[earlyMinName]-anchor-returnSeconds;
     const lo=halfGuides.map(item=>item.min),hi=halfGuides.map(item=>item.max);
+    const firstGap=half[0].time-anchor;lo[0]=firstGap;hi[0]=firstGap;
     const preferred=half.map(row=>row.interval),ordinary=halfGuides.map(ordinaryGuide);
     const gaps=solveHalf(lo,hi,ordinary,preferred,targetLo,targetHi,s.mode==='auto');
     if(!gaps)return failure([`${period}在逐列上下限、80窗、分布與返回時間範圍內，本次未找到可行調整。`],beforeWindows,beforeReview);
     let time=anchor;
     for(let i=0;i<gaps.length;i++){time+=gaps[i];output[from+i].interval=gaps[i];output[from+i].time=time;}
   }
-  const review=inspectManualSchedule(output,s,remotes),windows=windowReport(output,s.mode);
+  const review=inspectManualSchedule(output,s,remotes,{manualStart:true}),windows=windowReport(output,s.mode);
   if(!review.rulesOk)return failure(['調整結果未通過既有人工排程獨立驗算。'],beforeWindows,review);
   const changes=[];
   for(let i=0;i<source.length;i++)if(source[i].interval!==output[i].interval||source[i].time!==output[i].time)changes.push({id:source[i].id,index:i,beforeInterval:source[i].interval,interval:output[i].interval,delta:output[i].interval-source[i].interval,beforeTime:source[i].time,time:output[i].time});

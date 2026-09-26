@@ -6,7 +6,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   hardMin: 55, hardMax: 82,
 });
 
-import {PLANT_NAMES,REVERSED_SOURCE_PLANTS,parsePlantFields,plantSupport} from './plant-parser.mjs';
+import {PLANT_NAMES,REVERSED_SOURCE_PLANTS,normalizePlantRule,parsePlantFields,plantSupport} from './plant-parser.mjs';
 
 export const PLANTS = PLANT_NAMES;
 export {plantSupport};
@@ -81,9 +81,10 @@ function specialForm(text) {
   return tokens.find(token => SPECIAL.has(token)) ?? '';
 }
 
-export function parseRows(rawPairs, plant, reverse = false) {
+export function parseRows(rawPairs, plant, reverse = false, rules = {}) {
   if (!Array.isArray(rawPairs)) throw new Error('來源資料須為列陣列');
   if (typeof plant !== 'string' || !plant.trim()) throw new Error('請先選擇廠別');
+  if(plant==='示範廠')normalizePlantRule(plant,rules);
   return rawPairs.map((raw, index) => {
     if (!raw || typeof raw !== 'object') throw new Error(`第 ${index + 1} 筆來源格式錯誤`);
     const b = exactText(raw.b), c = exactText(raw.c);
@@ -99,7 +100,7 @@ export function parseRows(rawPairs, plant, reverse = false) {
       if (!parsed.region) issues.push('無法可靠解析區域');
       if (!parsed.group) issues.push('無法可靠解析完整小組');
     } else {
-      parsed=parsePlantFields(d,e,plant);issues.push(...parsed.issues);
+      parsed=parsePlantFields(d,e,plant,rules);issues.push(...parsed.issues);
     }
     return {
       id: `r${index + 1}`, d, e, region:parsed.region, equipment:parsed.equipment, floor:parsed.floor,
@@ -111,13 +112,13 @@ export function parseRows(rawPairs, plant, reverse = false) {
 
 // Refresh only unresolved imported rows. Existing d/e are already mapped and
 // must not be reversed a second time (notably for the three oil plants).
-export function reparsePendingRows(rows,plant) {
+export function reparsePendingRows(rows,plant,rules={},options={}) {
   if(!Array.isArray(rows))throw new Error('列資料須為陣列');
   return rows.map(row=>{
-    if(!Array.isArray(row?.issues)||row.issues.length===0)return row;
+    if(!options?.all&&(!Array.isArray(row?.issues)||row.issues.length===0))return row;
     let parsed;
-    if(plant==='示範廠')parsed=parseRows([{b:row.d,c:row.e}],plant,false)[0];
-    else parsed=parsePlantFields(row.d,row.e,plant);
+    if(plant==='示範廠')parsed=parseRows([{b:row.d,c:row.e}],plant,false,rules)[0];
+    else parsed=parsePlantFields(row.d,row.e,plant,rules);
     return {...row,region:parsed.region,equipment:parsed.equipment,floor:parsed.floor,group:parsed.group,form:parsed.form,issues:[...parsed.issues]};
   });
 }
@@ -275,6 +276,7 @@ export function manualIntervalGuides(rows,settings,amCount,remotes={}) {
     if(settingsErrors.length)return {error:settingsErrors[0]};
     const first=index===0||index===amCount,previous=first?null:rows[index-1];
     if(!Number.isInteger(row.floor)||row.floor<1||row.floor>99||(!first&&!Number.isInteger(previous.floor)))return {error:'樓層待確認'};
+    if(first)return {start:true,min:0,max:0,parts:[]};
     const bounds=rowBounds(row,previous,first,settings,remotes);
     if(bounds.error)return {error:bounds.error.replace(row.id+' ','')};
     return {min:bounds.lo,max:bounds.hi,parts:bounds.parts};
@@ -377,12 +379,22 @@ function rowStructureErrors(rows) {
   return errors;
 }
 
-function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remoteMap, label) {
+function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remoteMap, label, options={}) {
   const errors = [], bounds = [];
   if(!['yellow','red'].includes(output[0]?.background))errors.push(`${label}首筆缺少正式底色`);
   let previousTime = anchor;
   for (let i = 0; i < output.length; i++) {
-    const row = output[i], b = rowBounds(row,output[i-1],i===0,settings,remoteMap);
+    const row = output[i], manualStart=options.manualStart&&i===0;
+    if(manualStart){
+      const delta=row.time-anchor;
+      bounds.push({lo:0,hi:0,parts:[],ordinary:false});
+      if(!Number.isInteger(row.interval)||row.interval<0)errors.push(`${row.id} 首筆間隔不是有效非負整數秒`);
+      if(!Number.isInteger(row.time)||row.time<anchor||row.time>deadline)errors.push(`${row.id} 首筆時間不在${label}時段內`);
+      if(row.interval!==delta)errors.push(`${row.id} 時間與相鄰間隔不一致`);
+      previousTime=row.time;
+      continue;
+    }
+    const b = rowBounds(row,output[i-1],i===0,settings,remoteMap);
     if (b.error) { errors.push(b.error); continue; }
     bounds.push(b);
     if (!Number.isInteger(row.interval) || row.interval < b.lo || row.interval > b.hi) errors.push(`${row.id} 間隔不在獨立重算上下限 ${b.lo}–${b.hi}`);
@@ -404,7 +416,7 @@ function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remo
 }
 
 // Manual times are inspected with the same rules, never repaired or redistributed.
-export function inspectManualSchedule(rows,settings,remotes={}) {
+export function inspectManualSchedule(rows,settings,remotes={},options={}) {
   const errors=validateSettings(settings);if(errors.length)throw new Error(errors.join('；'));
   if(!rows.length)throw new Error('請先匯入元件。');
   const checks=[],summary={amCount:0,pmCount:0,amReturn:null,pmReturn:null,amLastTime:null,pmLastTime:null};
@@ -422,7 +434,7 @@ export function inspectManualSchedule(rows,settings,remotes={}) {
     report(label+'背景與樓層標記',rowStructureErrors(structure));
     const unknown=half.filter(row=>!Number.isInteger(row.floor)||row.floor<1||row.floor>99);
     if(unknown.length){report(label+'時間規則',unknown.map(row=>`${row.id} 樓層未知`));continue;}
-    const verified=verifyHalf(half,parseClock(settings[key+'Start']),parseClock(settings[key+'End']),settings[key+'EarlyMin'],settings[key+'EarlyMax'],settings,remotes,label);
+    const verified=verifyHalf(half,parseClock(settings[key+'Start']),parseClock(settings[key+'End']),settings[key+'EarlyMin'],settings[key+'EarlyMax'],settings,remotes,label,options);
     summary[key+'Return']=verified.returnTime;
     report(label+'時間規則／80窗',verified.errors);
   }
