@@ -1,7 +1,7 @@
 import {DEFAULT_SETTINGS,inspectManualSchedule,manualIntervalGuides,parseClock} from './domain.mjs';
 import {windowReport} from './validation.mjs';
 
-const MAX_ROWS=448;
+import {MAX_IMPORT_ROWS as MAX_ROWS} from './import-scan.mjs';
 
 function failure(errors,beforeWindows=null,review=null){
   return {ok:false,rows:[],review,windows:null,beforeWindows,changes:[],errors:[...new Set(errors)]};

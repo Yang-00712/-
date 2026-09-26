@@ -18,6 +18,7 @@ function fromBase64Url(value,label){
 
 function hex(bytes){return [...bytes].map(value=>value.toString(16).padStart(2,'0')).join('');}
 async function idForKey(keyBytes){return hex(new Uint8Array(await crypto.subtle.digest('SHA-256',keyBytes)));}
+async function packageId(keyText){const keyBytes=fromBase64Url(keyText,'取件鑰匙');if(keyBytes.length!==KEY_BYTES)throw new Error('取件鑰匙長度錯誤');return {keyBytes,id:await idForKey(keyBytes)};}
 
 function assertFilename(filename){
   if(typeof filename!=='string'||!filename.trim()||filename.length>240||/[\u0000-\u001f\\/:*?"<>|]/u.test(filename))throw new Error('TXT檔名格式錯誤');
@@ -99,10 +100,15 @@ export async function uploadPackage(baseUrl,encryptedPackage,options={}){
 }
 
 export async function retrievePackage(baseUrl,key,options={}){
-  const keyBytes=fromBase64Url(key,'取件鑰匙');if(keyBytes.length!==KEY_BYTES)throw new Error('取件鑰匙長度錯誤');
-  const id=await idForKey(keyBytes),stored=await fetchOnce(endpoint(baseUrl,`/v1/packages/${id}`),{method:'GET'},options,'取件');
-  if(!validTimes(stored))throw new Error('取件期限格式錯誤');
-  const restored=await decryptPackage(key,stored);return {...restored,expiresAt:stored.expiresAt};
+  const {id}=await packageId(key),stored=await fetchOnce(endpoint(baseUrl,'/v1/packages/consume'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id})},options,'取件');
+  if(stored?.consumed!==true)throw new Error('取件服務未確認雲端副本已刪除');if(!validTimes(stored))throw new Error('取件期限格式錯誤');
+  const restored=await decryptPackage(key,stored);return {...restored,expiresAt:stored.expiresAt,consumed:true};
+}
+
+export async function checkPackageStatus(baseUrl,key,options={}){
+  const {id}=await packageId(key),value=await fetchOnce(endpoint(baseUrl,'/v1/packages/status'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id})},options,'狀態查詢');
+  if(!value||typeof value!=='object'||typeof value.available!=='boolean')throw new Error('狀態查詢回覆格式錯誤');
+  if(!value.available)return {available:false};if(!Number.isInteger(value.expiresAt)||value.expiresAt<0)throw new Error('狀態查詢期限格式錯誤');return {available:true,expiresAt:value.expiresAt};
 }
 
 export const TXT_TRANSFER_LIMITS=Object.freeze({maxBodyBytes:MAX_BODY_BYTES,maxResponseBytes:MAX_RESPONSE_BYTES,keyBytes:KEY_BYTES,ivBytes:IV_BYTES,ttlMilliseconds:TTL_MILLISECONDS});

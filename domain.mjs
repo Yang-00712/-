@@ -7,6 +7,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 import {PLANT_NAMES,REVERSED_SOURCE_PLANTS,normalizePlantRule,parsePlantFields,plantSupport} from './plant-parser.mjs';
+import {normalizeTimeConstraints} from './time-constraints.mjs';
+import {solveTimeline} from './timeline-solver.mjs';
 
 export const PLANTS = PLANT_NAMES;
 export {plantSupport};
@@ -103,7 +105,7 @@ export function parseRows(rawPairs, plant, reverse = false, rules = {}) {
       parsed=parsePlantFields(d,e,plant,rules);issues.push(...parsed.issues);
     }
     return {
-      id: `r${index + 1}`, d, e, region:parsed.region, equipment:parsed.equipment, floor:parsed.floor,
+      id: `r${index + 1}`, d, e, ...(Number.isInteger(raw.sourceRow)?{sourceRow:raw.sourceRow}:{}), region:parsed.region, equipment:parsed.equipment, floor:parsed.floor,
       group:parsed.group, form:parsed.form, background: 'none', floorMark: false,
       extraMark: false, issues,
     };
@@ -284,6 +286,9 @@ export function manualIntervalGuides(rows,settings,amCount,remotes={}) {
 }
 
 function groupKey(row) { return [row.region,row.equipment,row.floor,row.group].join('|'); }
+export function automaticIntervalGuides(rows,settings,amCount,remotes={}){
+  return rows.map((row,index)=>{const b=rowBounds(row,rows[index-1],index===0||index===amCount,settings,remotes);return b.error?{error:b.error}:{min:b.lo,max:b.hi,parts:b.parts};});
+}
 function groupCuts(rows) {
   const cuts = [];
   for (let i=0;i<rows.length-1;i++) if (!rows[i].group || !rows[i+1].group || groupKey(rows[i]) !== groupKey(rows[i+1])) cuts.push(i+1);
@@ -308,14 +313,35 @@ function repairTriples(gaps, bounds) {
   }
 }
 
-function solveHalf(rows, anchor, deadline, earlyMin, earlyMax, settings, remoteMap, random, period) {
+function solveHalf(rows, anchor, deadline, earlyMin, earlyMax, settings, remoteMap, random, period, constraints=null, continuation=false) {
   const bounds=[];
   for(let i=0;i<rows.length;i++) {
-    const b=rowBounds(rows[i],rows[i-1],i===0,settings,remoteMap); if(b.error) return {error:b.error}; bounds.push(b);
+    const b=continuation&&i===0?{lo:0,hi:0,ordinary:false,parts:['指定時刻']} :rowBounds(rows[i],rows[i-1],i===0,settings,remoteMap); if(b.error) return {error:b.error}; bounds.push(b);
   }
   const returnBand=movement(rows.at(-1).floor,1); if(!returnBand) return {error:`${period}收尾缺少 ${rows.at(-1).floor}F 回 1F 的樓層時間表`};
   const returnSeconds=returnBand[1];
   const targetLo=deadline-earlyMax-anchor-returnSeconds, targetHi=deadline-earlyMin-anchor-returnSeconds;
+  if(constraints){
+    const pins=[],lo=bounds.map(b=>b.lo),hi=bounds.map(b=>b.hi);
+    for(let i=0;i<rows.length;i++){
+      const fixed=constraints.intervals[rows[i].id],time=constraints.times[rows[i].id];
+      if(fixed!=null&&!(continuation&&i===0)){if(fixed<lo[i]||fixed>hi[i])return {error:`${period}元件 ${rows[i].id} 指定間隔 ${formatDuration(fixed)} 不在規則 ${formatDuration(lo[i])}–${formatDuration(hi[i])} 內`};lo[i]=hi[i]=fixed;}
+      if(time!=null){if(time<anchor||time>deadline)return {error:`${period}元件 ${rows[i].id} 指定時間不在本時段內`};pins.push([i,time-anchor]);}
+    }
+    let previousIndex=-1,previousTime=0;
+    const minimumTotal=lo.reduce((a,b)=>a+b,0);
+    if(minimumTotal>targetHi)return {error:`${period}逐筆最少需要 ${minimumTotal} 秒，截止前最多 ${targetHi} 秒`};
+    for(const [index,time] of pins){
+      const minimum=lo.slice(previousIndex+1,index+1).reduce((a,b)=>a+b,0),maximum=hi.slice(previousIndex+1,index+1).reduce((a,b)=>a+b,0),available=time-previousTime;
+      if(available<minimum||(previousIndex>=0&&available>maximum))return {error:`${period} ${previousIndex<0?'最早開始':rows[previousIndex].id} → ${rows[index].id} 指定區段只有 ${available} 秒，規則需要 ${minimum}–${maximum} 秒${previousIndex<0?'（起點可延後，不能提早）':''}`};
+      previousIndex=index;previousTime=time;
+    }
+    const solved=solveTimeline({lo,hi,ordinary:bounds.map(b=>b.ordinary),preferred:bounds.map((b,i)=>lo[i]+Math.floor(random()*(hi[i]-lo[i]+1))),endLo:targetLo,endHi:targetHi,startMax:continuation?0:Math.max(0,targetHi),pins,windows:settings.mode==='auto'});
+    if(!solved)return {error:`${period}指定時間、逐筆間隔、<80窗口與收尾範圍衝突，或本次分布搜尋未完成；保留鎖定值，請檢查 ${pins.map(([i])=>rows[i].id).join('、')||'指定間隔'}`};
+    const actualAnchor=anchor+solved.offset;let time=actualAnchor;
+    const output=rows.map((row,i)=>{time+=solved.gaps[i];return {...row,time,interval:solved.gaps[i],period,parts:bounds[i].parts,...(i===0?{sessionStart:actualAnchor}:{})};});
+    return {rows:continuation?output:withSessionBackgrounds(output),returnTime:time+returnSeconds,actualAnchor};
+  }
   const minTotal=bounds.reduce((n,b)=>n+b.lo,0), maxTotal=bounds.reduce((n,b)=>n+b.hi,0);
   if(Math.max(minTotal,targetLo)>Math.min(maxTotal,targetHi)) return {error:`${period}在目前逐列上下限與返回範圍下未找到可行總秒數（可排 ${minTotal}–${maxTotal} 秒；需要 ${targetLo}–${targetHi} 秒）`};
   const target=Math.max(minTotal,Math.min(targetHi,Math.round((Math.max(minTotal,targetLo)+Math.min(maxTotal,targetHi))/2)));
@@ -424,6 +450,7 @@ export function inspectManualSchedule(rows,settings,remotes={},options={}) {
   const readable=issue=>{const id=String(issue).split(/[\s：]/,1)[0];return rowLabels.has(id)?rowLabels.get(id)+issue.slice(id.length):issue;};
   const report=(label,issues)=>checks.push({label,ok:!issues.length,detail:issues.length?`${issues.length} 項：${issues.slice(0,8).map(readable).join('；')}${issues.length>8?'…':''}`:'通過'});
   report('解析資料',rows.flatMap(row=>(row.issues||[]).map(issue=>`${row.id}：${issue}`)));
+  if(options.timeConstraints){const c=normalizeTimeConstraints(options.timeConstraints,rows);report('指定時間與間隔',rows.flatMap(row=>[...(c.times[row.id]!=null&&row.time!==c.times[row.id]?[`${row.id} 指定時間不符`]:[]),...(c.intervals[row.id]!=null&&row.interval!==c.intervals[row.id]?[`${row.id} 指定間隔不符`]:[])]));}
   const cut=rows.findIndex(row=>row.period==='下午');
   report('完整小組切點',cut>0&&groupKey(rows[cut-1])===groupKey(rows[cut])?['午休切在同一小組內']:[]);
   for(const [key,label] of [['am','上午'],['pm','下午']]){
@@ -434,7 +461,9 @@ export function inspectManualSchedule(rows,settings,remotes={},options={}) {
     report(label+'背景與樓層標記',rowStructureErrors(structure));
     const unknown=half.filter(row=>!Number.isInteger(row.floor)||row.floor<1||row.floor>99);
     if(unknown.length){report(label+'時間規則',unknown.map(row=>`${row.id} 樓層未知`));continue;}
-    const verified=verifyHalf(half,parseClock(settings[key+'Start']),parseClock(settings[key+'End']),settings[key+'EarlyMin'],settings[key+'EarlyMax'],settings,remotes,label,options);
+    const earliest=parseClock(settings[key+'Start']),departure=options.manualStart?earliest:half[0].sessionStart??earliest;
+    if(!Number.isInteger(departure)||departure<earliest||departure>half[0].time){report(label+'起點',['起點早於設定時間或晚於首筆']);continue;}
+    const verified=verifyHalf(half,departure,parseClock(settings[key+'End']),settings[key+'EarlyMin'],settings[key+'EarlyMax'],settings,remotes,label,options);
     summary[key+'Return']=verified.returnTime;
     report(label+'時間規則／80窗',verified.errors);
   }
@@ -453,21 +482,36 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
   const structureErrors=rowStructureErrors(rows);
   if(structureErrors.length)return failed([...settingErrors,...structureErrors]);
   if(settingErrors.length)return failed(settingErrors);
+  let constraints;
+  try{constraints=normalizeTimeConstraints(options?.constraints??{},rows);}catch(error){return failed([error.message]);}
+  const constrained=Object.keys(constraints.times).length||Object.keys(constraints.intervals).length;
   const amStart=parseClock(s.amStart),amEnd=parseClock(s.amEnd),pmStart=parseClock(s.pmStart),pmEnd=parseClock(s.pmEnd);
+  const pinEntries=rows.map((row,index)=>({index,time:constraints.times[row.id]})).filter(pin=>pin.time!=null);
+  for(let i=0;i<pinEntries.length;i++){
+    const pin=pinEntries[i];
+    if(!((pin.time>=amStart&&pin.time<=amEnd)||(pin.time>=pmStart&&pin.time<=pmEnd)))return failed([`第 ${pin.index+1} 筆指定時間 ${formatClock(pin.time)} 不在上午／下午時段內`]);
+    if(i&&pin.time<=pinEntries[i-1].time)return failed([`第 ${pinEntries[i-1].index+1}、${pin.index+1} 筆指定時間必須依元件順序遞增`]);
+  }
   const random=seeded(options?.seed??123), errors=[];
-  for(const cut of groupCuts(rows)) {
-    const am=solveHalf(rows.slice(0,cut),amStart,amEnd,s.amEarlyMin,s.amEarlyMax,s,remoteMap,random,'上午');
+  const cuts=groupCuts(rows);
+  if(constrained){const target=options.preferredCut??Math.round(rows.length*(amEnd-amStart)/(amEnd-amStart+pmEnd-pmStart));cuts.sort((a,b)=>Math.abs(a-target)-Math.abs(b-target));}
+  for(const cut of cuts) {
+    if(options.deadline&&Date.now()>options.deadline)break;
+    if(pinEntries.some(pin=>pin.index<cut?pin.time>amEnd:pin.time<pmStart))continue;
+    const am=solveHalf(rows.slice(0,cut),amStart,amEnd,s.amEarlyMin,s.amEarlyMax,s,remoteMap,random,'上午',constrained?constraints:null);
     if(am.error){errors.push(am.error);continue;}
-    const pm=solveHalf(rows.slice(cut),pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,random,'下午');
+    const pm=solveHalf(rows.slice(cut),pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,random,'下午',constrained?constraints:null);
     if(pm.error){errors.push(pm.error);continue;}
     const combined=[...am.rows,...pm.rows];
-    const verifyAm=verifyHalf(am.rows,amStart,amEnd,s.amEarlyMin,s.amEarlyMax,s,remoteMap,'上午');
-    const verifyPm=verifyHalf(pm.rows,pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,'下午');
+    const verifyAm=verifyHalf(am.rows,am.actualAnchor??amStart,amEnd,s.amEarlyMin,s.amEarlyMax,s,remoteMap,'上午');
+    const verifyPm=verifyHalf(pm.rows,pm.actualAnchor??pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,'下午');
     const verificationErrors=[...verifyAm.errors,...verifyPm.errors];
+    combined.forEach(row=>{if(constraints.times[row.id]!=null&&row.time!==constraints.times[row.id])verificationErrors.push(`${row.id} 指定時間不符`);if(constraints.intervals[row.id]!=null&&row.interval!==constraints.intervals[row.id])verificationErrors.push(`${row.id} 指定間隔不符`);});
     if(verificationErrors.length){errors.push(`獨立驗算未通過：${verificationErrors.join('、')}`);continue;}
     const windows=[verifyAm.minimumWindow,verifyPm.minimumWindow].filter(Number.isInteger);
     const minWindow=windows.length?Math.min(...windows):null;
     const checks=[
+      ...(constrained?[{label:'指定時間與間隔',ok:true,detail:`${pinEntries.length} 個指定時間完全相符；起點未早於設定時間`}]:[]),
       {label:'完整小組切點',ok:true,detail:`上午 ${cut} 筆，下午 ${rows.length-cut} 筆`},
       {label:'半日首筆底色',ok:true,detail:'上午、下午首筆均有正式底色；進場不重複加背景時間'},
       {label:'逐列規則獨立重算',ok:true,detail:'上下限、首筆、特殊、跨區、遠距與時間鏈通過'},
@@ -477,5 +521,48 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
     ];
     if(checks.every(c=>c.ok))return {ok:true,rows:combined,checks,warnings:['這是獨立 JS 試排，尚未等同 2027-10 VBA 原生驗收。'],errors:[],summary:{amCount:cut,pmCount:rows.length-cut,amReturn:verifyAm.returnTime,pmReturn:verifyPm.returnTime,minWindowSeconds:minWindow}};
   }
-  return failed(['第一版貪婪試排器未找到方案，不代表數學無解。', ...new Set(errors)].slice(0, 8),['請以 2027-10 VBA 或後續完整求解器獨立驗算。']);
+  const labels=new Map(rows.map((row,i)=>[row.id,`第 ${i+1} 筆`]));
+  return failed([constrained?'本次未找到同時符合指定時間與全部規則的方案。鎖定值與原排程保留。':'第一版貪婪試排器未找到方案，不代表數學無解。', ...new Set(errors.map(error=>error.replace(/\br\d+\b/g,id=>labels.get(id)||id)))].slice(0, 8),['有界分布搜尋未找到方案不等同數學無解。']);
+}
+
+// Keep the feasible suffix after a hard appointment even when its prefix needs
+// manual work. Partial previews are never returned as exportable success.
+export function solvePartialPreview(rows,settings,remotes={},options={}){
+  const s={...DEFAULT_SETTINGS,...settings},constraints=normalizeTimeConstraints(options.constraints??{},rows);
+  if(validateSettings(s).length||rows.some(row=>(row.issues||[]).length||!Number.isInteger(row.floor)))return null;
+  if(!Object.keys(constraints.times).length)return null;
+  const random=seeded(options.seed??123),times={amStart:parseClock(s.amStart),amEnd:parseClock(s.amEnd),pmStart:parseClock(s.pmStart),pmEnd:parseClock(s.pmEnd)};
+  let best=null;
+  for(const cut of groupCuts(rows)){
+    if(options.deadline&&Date.now()>options.deadline)break;
+    if(rows.some((row,i)=>constraints.times[row.id]!=null&&(i<cut?(constraints.times[row.id]<times.amStart||constraints.times[row.id]>times.amEnd):(constraints.times[row.id]<times.pmStart||constraints.times[row.id]>times.pmEnd))))continue;
+    const halves=[],unresolved=[],errors=[];let score=0;
+    for(const [key,period,from,to] of [['am','上午',0,cut],['pm','下午',cut,rows.length]]){
+      const half=rows.slice(from,to),earliest=times[key+'Start'],deadline=times[key+'End'];
+      let result=solveHalf(half,earliest,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,random,period,constraints),first=0;
+      if(result.error){
+        errors.push(result.error);result=null;
+        for(let i=0;i<half.length;i++){
+          const time=constraints.times[half[i].id];if(time==null)continue;
+          const candidate=solveHalf(half.slice(i),time,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,random,period,constraints,true);
+          if(candidate.error)continue;
+          const verify=verifyHalf(candidate.rows.map((row,j)=>j===0?{...row,background:'yellow'}:row),time,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,period,{manualStart:true});
+          if(verify.errors.length)continue;
+          result=candidate;first=i;break;
+        }
+      }else{
+        const verify=verifyHalf(result.rows,result.actualAnchor??earliest,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,period);
+        if(verify.errors.length){errors.push(...verify.errors);result=null;}
+      }
+      const missing=result?first:half.length;
+      const prefix=half.slice(0,missing).map(row=>({...row,period,time:constraints.times[row.id]??null,interval:null,needsManual:true}));
+      if(missing)unresolved.push({from:from+1,to:from+missing,period});
+      const suffix=result?result.rows:[];
+      if(first&&suffix.length)suffix[0]={...suffix[0],interval:null,needsManual:true,pinnedStart:true};
+      score+=Math.max(0,suffix.length-(first?1:0));
+      halves.push(...prefix,...suffix);
+    }
+    if(score&&score<rows.length&&(!best||score>best.resolvedCount))best={ok:false,partial:true,rows:halves,unresolved,resolvedCount:score,errors,summary:{amCount:cut,pmCount:rows.length-cut}};
+  }
+  return best;
 }

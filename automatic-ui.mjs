@@ -1,0 +1,35 @@
+import {autocolor,automaticIntervalGuides,formatClock,formatDuration,isSpecial} from './domain.mjs';
+import {windowReport} from './validation.mjs';
+import {remoteMap} from './storage.mjs';
+
+export function automaticTimeView(job,state,{esc,button}){
+  if(!job.rows.length)return '<p class="notice">匯入資料後，可點選元件指定時間。</p>';
+  const result=job.autoDraft|| (job.result?.ok?job.result:null),stale=result&&result.revision!==job.revision;
+  const scheduled=new Map((result?.rows||[]).map(row=>[row.id,row])),rows=autocolor(job.rows).map(row=>{
+    const prior=scheduled.get(row.id);if(!prior)return row;
+    // Current source fields remain authoritative after edits; retain only the old timeline.
+    return {...row,time:prior.time,interval:prior.interval,period:prior.period,sessionStart:prior.sessionStart,needsManual:prior.needsManual,...(!stale?{background:prior.background,floorMark:prior.floorMark}: {})};
+  });
+  const cut=result?.summary?.amCount??-1,guides=automaticIntervalGuides(rows,job.settings,cut,remoteMap(job));
+  const windows=result?windowReport(rows,job.settings.mode):null,pins=job.timeConstraints??{times:{},intervals:{}};
+  const entries=rows.map((row,index)=>({row,index,guide:guides[index],window:windows?.byId[row.id]}));
+  const visible=entries.filter(({row})=>!result||state.period==='all'||row.period===(state.period==='am'?'上午':'下午'));
+  const selected=entries.find(({row})=>row.id===state.selected),clock=n=>Number.isInteger(n)?formatClock(n):'待生成';
+  const verdict=({row,guide})=>row.needsManual?'待手動':guide.error?'待確認':!Number.isInteger(row.interval)?'待生成':row.interval<guide.min?'還差 '+formatDuration(guide.min-row.interval):row.interval>guide.max?'超過 '+formatDuration(row.interval-guide.max):'範圍內';
+  const difference=item=>`<span class="manual-difference ${verdict(item)==='範圍內'?'in-range':'off-range'}">${esc(verdict(item))}</span>`;
+  let html=`<section class="automatic-preview"><h2>自動時間預覽</h2><p class="inline-hint">點選元件，展開「指定時間」鎖定時刻。可指定多筆；起點可延後，不能早於上方開始時間。${stale?'以下保留上次排程，修改的條件尚未重新生成。':''}</p>`;
+  if(job.autoFailure?.length)html+=`<div class="notice error" role="alert">${job.autoFailure.map(esc).join('<br>')}</div>`;
+  if(result?.partial)html+=`<div class="notice">已排出 ${result.resolvedCount} 筆；${result.unresolved.length?result.unresolved.map(part=>`第 ${part.from}–${part.to} 筆`).join('、')+' 留給手動。':'尚有規則差額需確認。'}點元件「指定時間」可逐筆填入前段，後段時刻保留；全部通過後才成為完整結果。</div>`;
+  if(state.busy)html+=`<p id="auto-progress" role="status">${esc(state.progress||'正在搜尋…')}</p>${button('取消搜尋','cancel','light small','stop')}`;
+  html+=`<div class="manual-toolbar"><div class="segmented">${[['all','全部'],['am','上午'],['pm','下午']].map(([key,label])=>`<button class="segment ${state.period===key?'active':''}" data-act="auto-period" data-period="${key}">${label}</button>`).join('')}</div>${button('復原','undo','light small','undo',state.canUndo?'':'disabled')}</div><form id="auto-find-form" class="auto-find"><label for="auto-find">元件編號</label><input id="auto-find" name="index" inputmode="numeric" type="number" min="1" max="${rows.length}" placeholder="例如 52" required><button class="button light small" type="submit">定位</button></form>`;
+  if(windows){const pending=entries.filter(({index,window})=>window?.status==='invalid'&&rows[index+80]?.period===rows[index].period).length;html+=`<p class="manual-live-g ${windows.belowThreshold||pending?'has-fail':''}">&lt;80 最低 ${windows.minimum==null?'—':Math.floor(windows.minimum/60)} 分 · ${job.settings.mode==='outdoor'?'廠外僅顯示':windows.count?'未過 '+windows.belowThreshold+' 個窗口':'未形成可驗證窗口'}${pending?' · 待驗證 '+pending+' 窗':''}${stale?' · 上次結果':''}</p>`;}
+  html+=`<div class="manual-workbench ${selected?'has-selection':''}"><div class="table-scroll manual-scroll" id="auto-list" tabindex="0" aria-label="自動時間預覽，可上下左右滑動"><table class="manual-table"><colgroup>${[34,132,48,108,68,78,120,240].map(width=>`<col style="width:${width}px">`).join('')}</colgroup><thead><tr><th>#</th><th>時間／間隔</th><th>&lt;80</th><th>規則差額</th><th>樓層</th><th>型式</th><th>設備</th><th>完整設備碼</th></tr></thead><tbody>${visible.map(item=>{
+    const {row,index,window}=item,fixed=pins.times?.[row.id];
+    return `<tr class="bg-${row.background} ${selected?.row.id===row.id?'manual-selected':''}" data-act="auto-select" data-id="${esc(row.id)}"><td>${index+1}</td><td><button class="manual-time-button" data-act="auto-select" data-id="${esc(row.id)}" aria-label="元件 ${index+1}" aria-pressed="${selected?.row.id===row.id}"><span class="manual-check">${selected?.row.id===row.id?'✓':''}</span><span><strong>${esc(clock(row.time))}</strong><small>${fixed!=null?'🔒 '+formatClock(fixed):Number.isInteger(row.interval)?'間隔 '+formatDuration(row.interval):'點選指定時間'}</small></span></button></td><td class="manual-g-cell"><span class="manual-g ${window?.status||''}">${window?.minutes??'—'}</span></td><td>${difference(item)}</td><td class="manual-floor ${row.floorMark?'floor-change':''}">${esc(row.floor??'—')}F</td><td class="${isSpecial(row)?'special-form':''}">${esc(row.form||'—')}</td><td class="manual-equipment">${esc(row.equipment||'—')}</td><td class="manual-source">${esc(row.e)}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+  if(selected){
+    const {row,index,guide}=selected,time=pins.times?.[row.id],interval=pins.intervals?.[row.id];
+    html+=`<div class="manual-dock"><div class="manual-deletion-preview"><b>元件 ${index+1} · ${esc(row.equipment)}</b><p class="manual-rule">${esc(row.floor??'—')}F · ${esc(row.form||'—')} · ${guide.error?esc(guide.error):'需 '+formatDuration(guide.min)+'～'+formatDuration(guide.max)}</p><div class="manual-metrics"><div><span>目前間隔</span><strong>${Number.isInteger(row.interval)?formatDuration(row.interval):'待生成'}</strong></div><div><span>規則差額</span>${difference(selected)}</div></div><div class="auto-editors"><details class="manual-interval-editor"><summary>修改間隔${interval!=null?' · 已鎖定':''}</summary><form id="auto-interval-form" data-id="${esc(row.id)}"><label for="auto-interval">分.秒</label><input id="auto-interval" name="interval" inputmode="decimal" value="${interval!=null?formatDuration(interval).replace(':','.'):''}" placeholder="1.34" required><button class="button light small">鎖定間隔</button></form>${interval!=null?button('取消間隔鎖定','auto-unpin','light small','','data-kind="intervals" data-id="'+esc(row.id)+'"'):''}<small>自動生成時保留此間隔，其餘逐筆重新分配；不能超出規則。</small></details><details class="manual-interval-editor"><summary>指定時間${time!=null?' · '+formatClock(time):''}</summary><form id="auto-time-form" data-id="${esc(row.id)}"><label for="auto-clock">時:分[:秒]</label><input id="auto-clock" name="clock" inputmode="numeric" value="${time!=null?formatClock(time):''}" placeholder="1002 或 10:02" required><button class="button light small">鎖定時間</button></form>${time!=null?button('取消指定時間','auto-unpin','light small','','data-kind="times" data-id="'+esc(row.id)+'"'):''}<small>可鎖定多筆；按自動生成後同時滿足所有指定時間。</small></details></div></div><div class="manual-dock-actions">${button('自動生成','generate','light small','rocket',state.busy?'disabled':'')}${button('清選','auto-clear','light small')}</div></div>`;
+  }
+  return html+'</div></section>';
+}

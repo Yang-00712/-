@@ -1,3 +1,5 @@
+import {normalizeTimeConstraints} from './time-constraints.mjs';
+import {MAX_IMPORT_ROWS} from './import-scan.mjs';
 import {DEFAULT_SETTINGS,validateSettings} from './domain.mjs';
 import {normalizeImportParams} from './import-settings.mjs';
 import {DEFAULT_MEASUREMENT_SETTINGS,normalizeMeasurementSettings} from './measurements.mjs';
@@ -10,14 +12,14 @@ export const saveJob=job=>transaction('readwrite',s=>s.put(job));
 export const getJobs=()=>transaction('readonly',s=>s.getAll());
 export const removeJob=id=>transaction('readwrite',s=>s.delete(id));
 export function validateProject(data){
-  if(!data||data.schema!==1||typeof data.name!=='string'||data.name.length>200||!Array.isArray(data.rows)||data.rows.length>448)throw new Error('不是支援的 LOG 卡夾，或資料超過 448 筆。');
+  if(!data||data.schema!==1||typeof data.name!=='string'||data.name.length>200||!Array.isArray(data.rows)||data.rows.length>MAX_IMPORT_ROWS)throw new Error('不是支援的 LOG 卡夾，或資料超過 10,000 筆。');
   if(!data.settings||typeof data.settings!=='object'||Array.isArray(data.settings))throw new Error('卡夾缺少時間設定。');
   const settings={...DEFAULT_SETTINGS,...data.settings};const errors=validateSettings(settings);if(errors.length)throw new Error(errors.join('；'));
   let measurementSettings;if(Object.hasOwn(data,'measurementSettings')){if(!data.measurementSettings||typeof data.measurementSettings!=='object'||Array.isArray(data.measurementSettings))throw new Error('A/B 量測設定格式錯誤。');measurementSettings=normalizeMeasurementSettings(data.measurementSettings);}else measurementSettings=normalizeMeasurementSettings(DEFAULT_MEASUREMENT_SETTINGS);
   const ids=new Set(),rows=[];for(const r of data.rows){if(!r||typeof r.id!=='string'||r.id.length>100||ids.has(r.id))throw new Error('元件編號重複或無效。');ids.add(r.id);for(const k of ['d','e','region','equipment','group','form'])if(typeof r[k]!=='string'||r[k].length>2000)throw new Error('元件欄位格式錯誤。');if(r.floor!==null&&(!Number.isFinite(r.floor)||r.floor<0||r.floor>99))throw new Error('樓層資料無效。');if(!['none','yellow','red','blue'].includes(r.background)||typeof r.floorMark!=='boolean'||typeof r.extraMark!=='boolean'||!Array.isArray(r.issues)||r.issues.some(x=>typeof x!=='string'))throw new Error('標記資料無效。');for(const key of ['a','b'])if(Object.hasOwn(r,key)&&r[key]!==null&&(typeof r[key]!=='number'||!Number.isFinite(r[key])))throw new Error('A/B 量測值須為有限數字或空白。');rows.push({...structuredClone(r),a:Object.hasOwn(r,'a')?r.a:null,b:Object.hasOwn(r,'b')?r.b:null});}
-  const remotes=data.remotes||[];if(!Array.isArray(remotes)||remotes.length>448)throw new Error('遠距組合格式錯誤。');
+  const remotes=data.remotes||[];if(!Array.isArray(remotes)||remotes.length>MAX_IMPORT_ROWS)throw new Error('遠距組合格式錯誤。');
   for(const g of remotes){if(!g||typeof g.id!=='string'||typeof g.name!=='string'||g.name.length>100||!Array.isArray(g.rowIds)||g.rowIds.some(id=>!ids.has(id))||!Number.isInteger(g.min)||!Number.isInteger(g.max)||g.min<0||g.max<g.min||g.max>7200)throw new Error('遠距組合的時間或元件無效。');}
-  const overrides=data.overrides||{};if(typeof overrides!=='object'||Array.isArray(overrides)||Object.keys(overrides).length>448)throw new Error('單筆遠距格式錯誤。');for(const [id,x] of Object.entries(overrides)){if(!ids.has(id)||!x||!Number.isInteger(x.min)||!Number.isInteger(x.max)||x.min<0||x.max<x.min||x.max>7200)throw new Error('單筆遠距時間無效。');}
+  const overrides=data.overrides||{};if(typeof overrides!=='object'||Array.isArray(overrides)||Object.keys(overrides).length>MAX_IMPORT_ROWS)throw new Error('單筆遠距格式錯誤。');for(const [id,x] of Object.entries(overrides)){if(!ids.has(id)||!x||!Number.isInteger(x.min)||!Number.isInteger(x.max)||x.min<0||x.max<x.min||x.max>7200)throw new Error('單筆遠距時間無效。');}
   const timeMode=data.timeMode??'auto';if(!['auto','manual'].includes(timeMode))throw new Error('時間方式無效。');
   const manualPlan=data.manualPlan==null?null:normalizeManualPlan(data.manualPlan);
   const manualSettings=data.manualSettings==null?null:normalizeManualSettings(data.manualSettings);
@@ -31,7 +33,7 @@ export function validateProject(data){
   }
   if(Object.hasOwn(data,'importParams'))importParams=normalizeImportParams(data.importParams,plant);
   // Imported result claims are never trusted; always recompute locally.
-  return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant,rows,settings,measurementSettings,timeMode,manualPlan,manualSettings,manualRevision:0,manualResult:null,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo),...(parserRules===undefined?{}:{parserRules}),...(importParams===undefined?{}:{importParams})};
+  return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant,rows,settings,timeConstraints:normalizeTimeConstraints(data.timeConstraints??{},rows),measurementSettings,timeMode,manualPlan,manualSettings,manualRevision:0,manualResult:null,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo),...(parserRules===undefined?{}:{parserRules}),...(importParams===undefined?{}:{importParams})};
 }
 export function remoteMap(job){const map={};for(const g of job.remotes)for(const id of g.rowIds)map[id]={min:g.min,max:g.max,name:g.name};for(const [id,v] of Object.entries(job.overrides||{}))map[id]={...v,name:map[id]?.name||'單筆遠距'};return map;}
 export function durationInput(value){

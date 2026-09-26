@@ -1,0 +1,38 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "log-txt",
+  "main": "worker.mjs",
+  "workers_dev": true,
+  "preview_urls": false,
+  "compatibility_date": "2026-09-26",
+  "kv_namespaces": [
+    {
+      "binding": "LOG_TXT",
+      "id": "REPLACE_WITH_EXISTING_LOG_TXT_NAMESPACE_ID"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "LOG_RATE",
+      "namespace_id": "REPLACE_WITH_EXISTING_LOG_RATE_NAMESPACE_INTEGER",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LOG_PACKAGES",
+        "class_name": "TxtPackageObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-package-sqlite",
+      "new_sqlite_classes": ["TxtPackageObject"]
+    }
+  ]
+}

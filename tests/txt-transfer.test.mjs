@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decryptPackage,encryptPackage,retrievePackage,uploadPackage,TXT_TRANSFER_LIMITS} from '../txt-transfer.mjs';
+import {checkPackageStatus,decryptPackage,encryptPackage,retrievePackage,uploadPackage,TXT_TRANSFER_LIMITS} from '../txt-transfer.mjs';
 
 test('encrypts filename and TXT bytes and decrypts only with the key',async()=>{
   const bytes=new TextEncoder().encode('合成TXT\r\n001'),encrypted=await encryptPackage({filename:'合成.txt',bytesUint8Array:bytes});
@@ -23,11 +23,23 @@ test('client enforces encrypted body size and keeps an uncertain upload pending'
   assert.equal(calls,1);assert.strictEqual(error.pending,encrypted);
 });
 
-test('upload and retrieve helpers use explicit URLs once without real network',async()=>{
+test('upload and one-time consume helpers use explicit POST URLs without real network',async()=>{
   const encrypted=await encryptPackage({filename:'fetch.txt',bytesUint8Array:new Uint8Array([9,8])}),calls=[];
-  const fetchImpl=async(url,init)=>{calls.push({url,method:init.method});if(init.method==='POST')return new Response(JSON.stringify({id:encrypted.id,createdAt:1,expiresAt:43200001}),{status:201,headers:{'content-type':'application/json'}});return new Response(JSON.stringify({...encrypted.body,createdAt:1,expiresAt:43200001}),{status:200,headers:{'content-type':'application/json'}});};
+  const fetchImpl=async(url,init)=>{calls.push({url,method:init.method,body:JSON.parse(init.body)});if(url.endsWith('/v1/packages'))return new Response(JSON.stringify({id:encrypted.id,createdAt:1,expiresAt:43200001}),{status:201,headers:{'content-type':'application/json'}});return new Response(JSON.stringify({...encrypted.body,createdAt:1,expiresAt:43200001,consumed:true}),{status:200,headers:{'content-type':'application/json'}});};
   const receipt=await uploadPackage('https://worker.example/',encrypted,{fetchImpl});assert.equal(receipt.id,encrypted.id);
-  const restored=await retrievePackage('https://worker.example',encrypted.key,{fetchImpl});assert.equal(restored.filename,'fetch.txt');assert.deepEqual(restored.bytes,new Uint8Array([9,8]));assert.equal(restored.expiresAt,43200001);assert.equal(calls.length,2);
+  const restored=await retrievePackage('https://worker.example',encrypted.key,{fetchImpl});assert.equal(restored.filename,'fetch.txt');assert.deepEqual(restored.bytes,new Uint8Array([9,8]));assert.equal(restored.expiresAt,43200001);assert.equal(restored.consumed,true);assert.deepEqual(calls.map(item=>[new URL(item.url).pathname,item.method]),[['/v1/packages','POST'],['/v1/packages/consume','POST']]);assert.equal(calls[1].body.id,encrypted.id);
+});
+
+test('status check is non-consuming and validates availability without returning content',async()=>{
+ const encrypted=await encryptPackage({filename:'status.txt',bytesUint8Array:new Uint8Array([4])}),calls=[];
+ const fetchImpl=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({available:true,expiresAt:43200001}),{status:200});};
+ assert.deepEqual(await checkPackageStatus('https://worker.example',encrypted.key,{fetchImpl}),{available:true,expiresAt:43200001});assert.equal(new URL(calls[0].url).pathname,'/v1/packages/status');assert.equal(calls[0].init.method,'POST');assert.deepEqual(JSON.parse(calls[0].init.body),{id:encrypted.id});
+ const missing=await checkPackageStatus('https://worker.example',encrypted.key,{fetchImpl:async()=>new Response(JSON.stringify({available:false}),{status:200})});assert.deepEqual(missing,{available:false});
+});
+
+test('consume refuses to claim success without server deletion confirmation',async()=>{
+ const encrypted=await encryptPackage({filename:'confirm.txt',bytesUint8Array:new Uint8Array([1])});
+ await assert.rejects(()=>retrievePackage('https://worker.example',encrypted.key,{fetchImpl:async()=>new Response(JSON.stringify({...encrypted.body,createdAt:1,expiresAt:43200001}),{status:200})}),/未確認雲端副本已刪除/);
 });
 
 test('upload accepts only a matching twelve-hour receipt and keeps failures pending',async()=>{

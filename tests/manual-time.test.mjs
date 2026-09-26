@@ -24,7 +24,7 @@ test('settings merge defaults, preserve seconds and reject invalid ranges', () =
   assert.equal(normalizeManualSettings({}).amStart, '08:20:00');
   for (const value of [
     {...shortSettings, base: 0}, {...shortSettings, rand: 3601},
-    {...shortSettings, base: 3600, rand: 3601}, {...shortSettings, amCount: 449},
+    {...shortSettings, base: 3600, rand: 3601}, {...shortSettings, amCount: 10001},
     {...shortSettings, amStart: '8:2'}, {...shortSettings, amEnd: '13:00:07'},
     {...shortSettings, pmStart: '13:03:07'},
   ]) assert.throws(() => normalizeManualSettings(value));
@@ -90,7 +90,7 @@ test('mapping uses active candidates and refuses insufficient or malformed rows'
   const plan = createManualPlan({...shortSettings, base:60,rand:0,amCount:4}, {rng:() => 0});
   const excluded = setManualExcluded(plan, 'am', [1]);
   assert.throws(() => mapManualTimes([{id:'a'},{id:'b'},{id:'c'},{id:'d'}], excluded), /上午有效候選時間不足/);
-  assert.throws(() => mapManualTimes([], plan), /1 到 448/);
+  assert.throws(() => mapManualTimes([], plan), /1 到 10000/);
   assert.throws(() => mapManualTimes([{id:'a'},{id:'a'}], {...plan,settings:{...plan.settings,amCount:1}}), /id 不可重複/);
   assert.throws(() => mapManualTimes([{id:'a'},{}], {...plan,settings:{...plan.settings,amCount:1}}), /有效 id/);
   assert.throws(() => mapManualTimes([{id:'a'}], {...plan,settings:{...plan.settings,amCount:2}}), /不得超過/);

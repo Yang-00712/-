@@ -10,7 +10,7 @@ export const DEFAULT_MANUAL_SETTINGS = Object.freeze({
   amCount: 240,
 });
 
-const MAX_ROWS = 448;
+import {MAX_IMPORT_ROWS as MAX_ROWS} from './import-scan.mjs';
 const MAX_STEPS = 10000;
 
 function plainObject(value, label) {
