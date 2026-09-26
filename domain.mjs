@@ -320,6 +320,19 @@ function rowBounds(row, previous, first, settings, remoteMap) {
   return {lo,hi,parts,ordinary};
 }
 
+// Read the same interval rules used by validation, without changing manual times.
+export function manualIntervalGuides(rows,settings,amCount,remotes={}) {
+  const settingsErrors=validateSettings(settings);
+  return rows.map((row,index)=>{
+    if(settingsErrors.length)return {error:settingsErrors[0]};
+    const first=index===0||index===amCount,previous=first?null:rows[index-1];
+    if(!Number.isInteger(row.floor)||row.floor<1||row.floor>99||(!first&&!Number.isInteger(previous.floor)))return {error:'樓層待確認'};
+    const bounds=rowBounds(row,previous,first,settings,remotes);
+    if(bounds.error)return {error:bounds.error.replace(row.id+' ','')};
+    return {min:bounds.lo,max:bounds.hi,parts:bounds.parts};
+  });
+}
+
 function groupKey(row) { return [row.region,row.equipment,row.floor,row.group].join('|'); }
 function groupCuts(rows) {
   const cuts = [];

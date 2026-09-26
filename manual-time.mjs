@@ -86,13 +86,17 @@ function validateExclusions(value, label, maximumIndex) {
 
 export function normalizeManualPlan(plan) {
   plainObject(plan, '手動時間方案');
-  if (plan.schema !== 1) throw new Error('手動時間方案版本不支援');
+  if (![1,2].includes(plan.schema)) throw new Error('手動時間方案版本不支援');
   const settings = normalizeManualSettings(plainObject(plan.settings, '手動時間設定'));
-  if (!Array.isArray(plan.steps) || plan.steps.length < 2 || plan.steps.length > MAX_STEPS) {
+  const amWindow = windowFor(settings, 'am');
+  const pmWindow = windowFor(settings, 'pm');
+  const amDuration=amWindow.end-amWindow.start,pmDuration=pmWindow.end-pmWindow.start;
+  const validateSteps=(input,duration)=>{
+  if (!Array.isArray(input) || input.length < 2 || input.length > MAX_STEPS) {
     throw new Error(`手動時間步驟必須有 2 到 ${MAX_STEPS} 筆`);
   }
-  if (plan.steps[0] !== 0) throw new Error('手動時間第一個步驟必須為 0');
-  const steps = plan.steps.map((step, index) => {
+  if (input[0] !== 0) throw new Error('手動時間第一個步驟必須為 0');
+  const steps = input.map((step, index) => {
     if (!Number.isInteger(step)) throw new Error('手動時間步驟須為整數');
     if (index > 0 && (step < settings.base || step > settings.base + settings.rand)) {
       throw new Error('手動時間步驟超出設定範圍');
@@ -100,24 +104,27 @@ export function normalizeManualPlan(plan) {
     return step;
   });
   const totals = cumulativeSteps(steps);
-  const amWindow = windowFor(settings, 'am');
-  const pmWindow = windowFor(settings, 'pm');
-  const longest = Math.max(amWindow.end - amWindow.start, pmWindow.end - pmWindow.start);
-  if (totals.at(-1) <= longest || totals.at(-2) > longest) {
+  if (totals.at(-1) <= duration || totals.at(-2) > duration) {
     throw new Error('手動時間步驟與時段終點不相符');
   }
+  return steps;
+  };
+  const steps=validateSteps(plan.steps,plan.schema===1?Math.max(amDuration,pmDuration):amDuration);
+  const pmSteps=plan.schema===2?validateSteps(plan.pmSteps,pmDuration):steps;
   const excluded = plainObject(plan.excluded, '手動時間排除設定');
   const lastVisible = period => {
     const window = windowFor(settings, period);
     const duration = window.end - window.start;
+    const totals=cumulativeSteps(period==='am'?steps:pmSteps);
     let last = -1;
     for (let index = 0; index < totals.length && totals[index] <= duration; index += 1) last = index;
     return last;
   };
   return {
-    schema: 1,
+    schema: plan.schema,
     settings,
     steps,
+    ...(plan.schema===2?{pmSteps}:{}),
     excluded: {
       am: validateExclusions(excluded.am, '上午', lastVisible('am')),
       pm: validateExclusions(excluded.pm, '下午', lastVisible('pm')),
@@ -130,10 +137,10 @@ export function createManualPlan(settings, {rng = Math.random} = {}) {
   if (typeof rng !== 'function') throw new Error('隨機來源須為函式');
   const am = windowFor(normalized, 'am');
   const pm = windowFor(normalized, 'pm');
-  const longest = Math.max(am.end - am.start, pm.end - pm.start);
+  const generate=duration=>{
   const steps = [0];
   let elapsed = 0;
-  while (elapsed <= longest) {
+  while (elapsed <= duration) {
     if (steps.length >= MAX_STEPS) throw new Error('手動時間候選超過 10000 筆，請調高間隔設定');
     const value = rng();
     if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error('隨機來源必須回傳 0 以上且小於 1 的數字');
@@ -141,14 +148,17 @@ export function createManualPlan(settings, {rng = Math.random} = {}) {
     steps.push(step);
     elapsed += step;
   }
-  return {schema: 1, settings: normalized, steps, excluded: {am: [], pm: []}};
+  return steps;
+  };
+  return {schema: 2, settings: normalized, steps:generate(am.end-am.start),pmSteps:generate(pm.end-pm.start), excluded: {am: [], pm: []}};
 }
 
 export function candidateRows(plan, period) {
   const normalized = normalizeManualPlan(plan);
   const window = windowFor(normalized.settings, period);
   const excluded = new Set(normalized.excluded[period]);
-  const totals = cumulativeSteps(normalized.steps);
+  const steps=period==='pm'&&normalized.schema===2?normalized.pmSteps:normalized.steps;
+  const totals = cumulativeSteps(steps);
   const rows = [];
   let previousActive = window.start;
   for (let index = 0; index < totals.length; index += 1) {
@@ -158,7 +168,7 @@ export function candidateRows(plan, period) {
     rows.push({
       index,
       time,
-      step: normalized.steps[index],
+      step: steps[index],
       excluded: isExcluded,
       interval: isExcluded ? null : time - previousActive,
     });

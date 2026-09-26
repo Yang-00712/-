@@ -30,16 +30,28 @@ test('settings merge defaults, preserve seconds and reject invalid ranges', () =
   ]) assert.throws(() => normalizeManualSettings(value));
 });
 
-test('Excel ROUND endpoints and shared increments produce both candidate chains', () => {
-  const values = [0, 0.999999, 0.5, 0, 0.999999];
+test('Excel ROUND endpoints use independent draws for morning and afternoon', () => {
+  const values = [0, 0.999999, 0.5, 0, 0.999999, .25, .75, .1, .6, .9];
   let call = 0;
   const plan = createManualPlan(shortSettings, {rng: () => values[call++ % values.length]});
   assert.deepEqual(plan.steps.slice(0, 4), [0, 36, 48, 42]);
   const am = candidateRows(plan, 'am'), pm = candidateRows(plan, 'pm');
-  assert.deepEqual(am.map(x => x.step), pm.map(x => x.step));
-  assert.deepEqual(am.map(x => x.time - am[0].time), pm.map(x => x.time - pm[0].time));
+  assert.equal(plan.schema,2);
+  assert.deepEqual(plan.pmSteps.slice(0,4),[0,39,45,37]);
+  assert.notDeepEqual(am.map(x => x.step), pm.map(x => x.step));
   assert.equal(am[0].interval, 0);
   assert.equal(pm[0].time, 13 * 3600 + 7);
+});
+
+test('legacy shared candidates keep their exact clocks and deletions',()=>{
+  const generated=createManualPlan(shortSettings,{rng:()=>.25});
+  const {pmSteps,...rest}=generated;
+  const legacy={...rest,schema:1,excluded:{am:[1],pm:[]}};
+  assert.deepEqual(normalizeManualPlan(legacy),legacy);
+  assert.deepEqual(candidateRows(legacy,'am').map(x=>x.step),candidateRows(legacy,'pm').map(x=>x.step));
+  assert.equal(candidateRows(legacy,'am')[2].interval,78);
+  assert.equal(candidateRows(legacy,'pm')[2].interval,39);
+  assert.equal(setManualExcluded(legacy,'pm',[2]).schema,1);
 });
 
 test('exclusions are period-local and merge elapsed time without rerandomizing', () => {
@@ -87,7 +99,9 @@ test('mapping uses active candidates and refuses insufficient or malformed rows'
 test('untrusted imported plans reject malformed steps and exclusions', () => {
   const plan = createManualPlan(shortSettings, {rng:() => 0});
   const cases = [
-    {...plan, schema:2},
+    {...plan, schema:3},
+    {...plan, pmSteps:undefined},
+    {...plan, pmSteps:plan.pmSteps.slice(0,-1)},
     {...plan, steps:[1,...plan.steps.slice(1)]},
     {...plan, steps:[0,35,...plan.steps.slice(2)]},
     {...plan, steps:plan.steps.slice(0,-1)},

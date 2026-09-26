@@ -48,3 +48,32 @@ html,body{max-width:100%;overflow-x:hidden}.brand-logo{width:42px;height:42px;bo
 .result-layout{grid-template-columns:minmax(0,1fr)}.result-layout .result-scroll{max-height:none;overflow-y:visible}.review-status{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 0;color:var(--teal);font-size:12px}.review-status .review-incomplete{color:#925a1d}.review-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:5px 0 12px}.review-summary>div{padding:13px 15px;border:1px solid var(--line);border-radius:12px;background:#fff}.review-summary span{font-size:12px;color:var(--muted)}.review-summary strong{display:block;margin:7px 0 2px;font-size:22px;font-variant-numeric:tabular-nums}.review-summary small{font-size:10px;color:var(--muted)}.review-summary p{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}.review-summary b{color:var(--deep);font-size:14px;margin-left:6px}.review-validation{padding:12px 15px;font-size:12px}.review-validation summary{cursor:pointer;color:var(--teal);font-weight:700}.review-actions{margin-top:12px;gap:8px}.review-actions .button{min-height:42px;padding:9px 12px;font-size:12px}.measurement-result{font-weight:650}.result-layout .result-controls{margin:10px 0 8px}
 
 .review-status.manual-review-warning{background:#fff4df;border-color:#e8ca90}.manual-review-warning>strong{color:#85581b}
+
+/* Manual detail pane keeps clocks visible while reading floor, form and bounds. */
+.table-scroll.manual-scroll{height:62vh;height:62dvh;min-height:280px;max-height:720px;overscroll-behavior:contain;scrollbar-gutter:stable}
+.manual-table{table-layout:auto;width:max-content;min-width:970px;font-size:13px}
+.manual-table th{position:sticky;top:0;z-index:3;white-space:nowrap;padding:11px 9px}
+.manual-table td{padding:5px 9px;white-space:nowrap;background:#fff;text-align:left}
+.manual-table th:first-child,.manual-table td:first-child{position:sticky;left:0;min-width:34px;width:34px;padding:4px;text-align:center;z-index:2;background:#f0f5f1}
+.manual-table th:nth-child(2),.manual-table td:nth-child(2){position:sticky;left:34px;min-width:127px;width:127px;z-index:2;background:#fff;box-shadow:2px 0 0 #dce5df}
+.manual-table th:first-child,.manual-table th:nth-child(2){z-index:4;background:#e9f1ed}
+.manual-table th:nth-child(3){width:auto;min-width:66px}
+.manual-table th:nth-child(4){min-width:78px}
+.manual-table td.manual-equipment{color:#ac3033;font-weight:750;min-width:110px}
+.manual-table .manual-floor{font-weight:700;min-width:66px}
+.manual-table .manual-rule{font-variant-numeric:tabular-nums;min-width:113px}
+.manual-table .manual-verdict{font-size:12px;min-width:90px;color:#32694e}
+.manual-table .manual-verdict.outside{color:#aa3030;font-weight:700}
+.manual-table .manual-source{font-family:ui-monospace,Consolas,monospace;min-width:240px}
+.manual-table .floor-change{color:#b83937;font-weight:750}.manual-table .extra-change{color:#866100}
+.manual-table tr.bg-yellow td{background:#fff6c6}.manual-table tr.bg-red td{background:#fbe0db}.manual-table tr.bg-blue td{background:#e0edfd}
+.manual-table tr.manual-selected td{background:#d9eee3;box-shadow:inset 0 2px #17695e,inset 0 -2px #17695e}
+.manual-table tr.manual-excluded td{background:#f1f3f1;color:#96a19b}
+.manual-table .manual-time-button{padding:5px 0;min-height:65px;justify-content:start;border:0}
+.manual-table .manual-time-button strong{font-size:15px}.manual-table .manual-time-button small{font-size:11px}
+.manual-dock{display:block;padding:9px 10px}.manual-dock-actions{display:flex;align-items:center;gap:6px}.manual-dock-actions>span{margin-right:auto;font-size:12px}
+.manual-deletion-preview{max-height:26vh;max-height:26dvh;overflow:auto;padding:1px 3px 9px;font-size:12px;line-height:1.55}
+.manual-deletion-preview>span{font-weight:700}.manual-preview-line{display:grid;gap:2px;padding:6px 0;border-bottom:1px solid #ffffff29}
+.manual-preview-line small{color:#d7ebda}.manual-shortage{display:block;color:#ffe0a1;margin-top:6px}
+.manual-legacy{font-size:12px;color:#856026;margin-top:-8px}
+@media(max-width:540px){.manual-page{gap:11px}.manual-table td{padding:4px 7px}.manual-dock{bottom:80px}.manual-help{line-height:1.7}}
