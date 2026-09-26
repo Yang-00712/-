@@ -197,6 +197,15 @@ export function isSpecial(row) {
   return [...SPECIAL].some(code => form.includes(code));
 }
 
+// A half-day starts a new background even when lunch falls within the same equipment.
+// Entry time is still calculated from the anchor; adding this color must not add a background interval.
+export function withSessionBackgrounds(rows) {
+  return rows.map((row,index)=>{
+    const first=['上午','下午'].includes(row.period)&&(index===0||row.period!==rows[index-1].period);
+    return first&&!['yellow','red'].includes(row.background)?{...row,background:'yellow'}:{...row};
+  });
+}
+
 export function autocolor(rows) {
   if (!Array.isArray(rows)) throw new Error('列資料須為陣列');
   const result = rows.map(row => ({...row, issues: (row.issues ?? []).filter(issue=>!issue.startsWith('背景組將超過29列'))}));
@@ -372,7 +381,7 @@ function solveHalf(rows, anchor, deadline, earlyMin, earlyMax, settings, remoteM
   if(total>targetHi)return {error:`${period}窗口調整後超出返回時間上限`};
   let time=anchor;
   const output=rows.map((row,i)=>{time+=gaps[i];return {...row,time,interval:gaps[i],period,parts:bounds[i].parts};});
-  return {rows:output,returnTime:time+returnSeconds,returnSeconds,bounds,gaps};
+  return {rows:withSessionBackgrounds(output),returnTime:time+returnSeconds,returnSeconds,bounds,gaps};
 }
 
 function failed(errors, warnings=[]) {
@@ -409,6 +418,7 @@ function rowStructureErrors(rows) {
 
 function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remoteMap, label) {
   const errors = [], bounds = [];
+  if(!['yellow','red'].includes(output[0]?.background))errors.push(`${label}首筆缺少正式底色`);
   let previousTime = anchor;
   for (let i = 0; i < output.length; i++) {
     const row = output[i], b = rowBounds(row,output[i-1],i===0,settings,remoteMap);
@@ -460,6 +470,7 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
     const minWindow=windows.length?Math.min(...windows):null;
     const checks=[
       {label:'完整小組切點',ok:true,detail:`上午 ${cut} 筆，下午 ${rows.length-cut} 筆`},
+      {label:'半日首筆底色',ok:true,detail:'上午、下午首筆均有正式底色；進場不重複加背景時間'},
       {label:'逐列規則獨立重算',ok:true,detail:'上下限、首筆、特殊、跨區、遠距與時間鏈通過'},
       {label:'返回1F',ok:true,detail:`上午 ${formatClock(verifyAm.returnTime)}；下午 ${formatClock(verifyPm.returnTime)}`},
       {label:'普通三連續同秒',ok:true,detail:'只檢查連續普通間隔；背景與遠距不誤判'},

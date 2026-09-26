@@ -1,6 +1,6 @@
 importScripts('./version.js');
 const CACHE=`log-mobile-shell-${LOG_RELEASE.version}`;
-const ASSETS=['./','./index.html','./version.js','./app.css','./app.mjs','./domain.mjs','./storage.mjs','./validation.mjs','./update.mjs','./import-worker.js','./solver-worker.mjs','./vendor/xlsx.mini.min.js','./manifest.webmanifest','./icon-192.png','./icon-192.png?v=cat-right','./icon-512.png','./icon-512.png?v=cat-right'];
+const ASSETS=['./','./index.html','./version.js','./app.css','./app.mjs','./domain.mjs','./storage.mjs','./validation.mjs','./measurements.mjs','./job-rows.mjs','./update.mjs','./import-worker.js','./solver-worker.mjs','./vendor/xlsx.mini.min.js','./manifest.webmanifest','./icon-192.png','./icon-192.png?v=cat-right','./icon-512.png','./icon-512.png?v=cat-right'];
 // Atomic app-shell install. An update waits until old tabs close; no mid-job reload.
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(path=>new Request(path,{cache:'reload'}))))));
 // The client requests activation only after saving and checking for active edits.

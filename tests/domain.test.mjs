@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULT_SETTINGS, PLANTS, parseClock, formatClock, formatDuration, parseRows, makeDemo, isSpecial, autocolor, validateSettings, solvePreview} from '../domain.mjs';
+import {DEFAULT_SETTINGS, PLANTS, parseClock, formatClock, formatDuration, parseRows, makeDemo, isSpecial, autocolor, validateSettings, solvePreview, withSessionBackgrounds} from '../domain.mjs';
+import {backgroundReport} from '../validation.mjs';
 
 test('clock and duration utilities are strict',()=>{
   assert.equal(parseClock('0820'),30000); assert.equal(parseClock('13:06'),47160);
@@ -126,4 +127,27 @@ test('demo ordinary intervals retain per-row variation instead of filling every 
   assert.ok(r.ok,r.errors?.join(';'));
   const ordinary=r.rows.filter(x=>x.parts.some(p=>p.startsWith('普通 '))&&x.parts.length===1);
   assert.ok(new Set(ordinary.map(x=>x.interval)).size>=6);
+});
+
+test('afternoon entry opens a real yellow background and restarts counting without charging another background',()=>{
+  const rows=[
+    {id:'am',period:'上午',background:'yellow'},
+    {id:'am2',period:'上午',background:'none'},
+    {id:'pm',period:'下午',background:'none'},
+    {id:'pm2',period:'下午',background:'none'},
+  ];
+  const marked=withSessionBackgrounds(rows),report=backgroundReport(marked);
+  assert.equal(rows[2].background,'none');
+  assert.equal(marked[2].background,'yellow');
+  assert.equal(report.byId.pm.position,1);assert.equal(report.byId.pm.total,2);
+  assert.equal(report.byId.am.total,2);
+  assert.equal(withSessionBackgrounds([{...rows[2],background:'red'}])[0].background,'red');
+  assert.equal(withSessionBackgrounds([{...rows[2],background:'blue'}])[0].background,'yellow');
+  const result=solvePreview(makeDemo().rows,DEFAULT_SETTINGS,{}, {seed:123});
+  assert.ok(result.ok,result.errors?.join(';'));
+  for(const first of [result.rows[0],result.rows[result.summary.amCount]]){
+    assert.ok(['yellow','red'].includes(first.background));
+    assert.ok(first.parts.some(part=>part.startsWith('進場 ')));
+    assert.equal(first.parts.some(part=>part.startsWith('背景 ')),false);
+  }
 });
