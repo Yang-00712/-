@@ -89,3 +89,22 @@ html,body{max-width:100%;overflow-x:hidden}.brand-logo{width:42px;height:42px;bo
 .import-parsed{display:grid;gap:4px;padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.import-parsed:last-child{border-bottom:0}.import-parsed>strong{color:#a73436}.import-parsed small{color:var(--muted)}.import-parsed .parse-warning{color:#a73436;font-size:12px;margin:2px 0}.import-parsed details{font-size:12px}.import-parsed details p{margin:6px 0}
 
 .txt-retrieve-entry{margin-bottom:16px}.txt-filename{overflow-wrap:anywhere;font-weight:700}.txt-preview{overflow:auto;max-height:200px;font-size:12px;white-space:pre}.txt-recent{display:grid;gap:8px;margin-top:12px}.txt-recent button{display:grid;text-align:left;overflow-wrap:anywhere}.txt-recent small{font-weight:400}#txt-receipt-key,#txt-key{width:100%;min-height:80px;resize:vertical;font-family:monospace;overflow-wrap:anywhere}#txt-output-form>button{margin-top:18px}
+
+/* Keep row identity visible while reviewing every result column. */
+.result-layout .result-scroll{height:62vh;height:62dvh;min-height:280px;max-height:720px;overflow:auto;overscroll-behavior:contain;isolation:isolate}
+.data-table.result-table{width:886px;min-width:886px}
+.result-table tr:not(.table-detail)>td:nth-child(-n+2){position:sticky;z-index:3;background:#fff}
+.result-table tr:not(.table-detail)>td:first-child,.result-table th:first-child{left:0}
+.result-table tr:not(.table-detail)>td:nth-child(2),.result-table th:nth-child(2){left:28px;box-shadow:2px 0 0 #dce5df}
+.result-table th:nth-child(-n+2){position:sticky;z-index:5}
+.result-table tr.bg-yellow>td:nth-child(-n+2){background:#fff6c6}.result-table tr.bg-red>td:nth-child(-n+2){background:#fbe0db}.result-table tr.bg-blue>td:nth-child(-n+2){background:#e0edfd}
+.txt-entry-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}.txt-entry-actions .button{flex:1;min-width:100px;font-size:12px;padding:10px 8px;text-decoration:none}
+.manual-stage-summary{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px}.manual-stage-summary b{font-size:23px;padding:0 3px;font-variant-numeric:tabular-nums}.manual-assignment>p{font-size:12px;line-height:1.7;margin-top:10px}
+.manual-table th:nth-child(4),.manual-table td:nth-child(4){min-width:96px;width:96px}.manual-table th:nth-child(5){min-width:68px}.manual-table th:nth-child(6){min-width:78px}
+.manual-difference{display:inline-block;font-size:12px;font-weight:700;white-space:nowrap;border-radius:7px;padding:5px 6px;font-variant-numeric:tabular-nums}.manual-difference.off-range{background:#fbe0db;color:#a3292d}.manual-difference.in-range{color:#356449}
+.manual-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.manual-metrics>div{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:9px 10px;background:#ffffff13;border:1px solid #ffffff25;border-radius:9px}.manual-metrics>div>span:first-child{font-size:11px;color:#c9ded5}.manual-metrics strong,.manual-metrics .manual-difference{font-size:20px;line-height:1.2}.manual-metrics .manual-difference.in-range{color:#d6f4da}.manual-metrics .manual-difference.off-range{background:#ffd9d5;color:#94282c}
+.manual-rule{font-size:12px;margin:4px 0;color:#d7e7de}.manual-edit-rule{display:block;color:#d7e7de;line-height:1.6}.manual-preview-heading{margin-top:12px;padding-top:10px;padding-bottom:6px}.manual-deletion-preview{max-height:36vh;max-height:36dvh}.manual-dock-actions{padding-top:8px;border-top:1px solid #ffffff29}.manual-page:has(.manual-dock){padding-bottom:43dvh}
+.tabs{gap:14px;flex-wrap:wrap}.tab{font-size:13px}
+.manual-interval-editor summary{padding:6px 0;cursor:pointer;color:#d5f0df;font-weight:650}.manual-deletion-preview{max-height:40vh;max-height:40dvh}.manual-cut-action{width:100%;margin:3px 0 8px}
+.manual-assignment .foot-actions{flex-wrap:wrap}.manual-assignment .button{white-space:nowrap}
+@media(max-width:899px){.mobile-nav{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding-left:7px;padding-right:7px}.mobile-nav .nav-item{width:100%;padding:7px 1px;font-size:10px}.mobile-nav .nav-item svg{width:21px;height:21px}.mobile-nav .nav-item span{font-size:10px;letter-spacing:-.3px}}

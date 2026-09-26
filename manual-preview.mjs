@@ -1,9 +1,10 @@
-import {candidateRows,setManualExcluded} from './manual-time.mjs';
+import {candidateRows,setManualExcluded,normalizeManualPlan} from './manual-time.mjs';
 import {manualIntervalGuides,parseClock} from './domain.mjs';
 import {remoteMap} from './storage.mjs';
 import {windowReport} from './validation.mjs';
 
 export function manualHalfRows(job,plan,period) {
+  plan=normalizeManualPlan(plan);
   const amCount=plan.settings.amCount,startIndex=period==='am'?0:amCount;
   const needed=period==='am'?amCount:job.rows.length-amCount;
   const guides=manualIntervalGuides(job.rows,job.settings,amCount,remoteMap(job));
@@ -33,8 +34,8 @@ export function previewManualDeletion(job,plan,period,indexes) {
   const next=setManualExcluded(plan,period,selected),after=manualHalfRows(job,next,period);
   const beforeBySource=new Map(before.filter(row=>row.target).map(row=>[row.sourceIndex,row]));
   const affected=after.filter(row=>!row.excluded&&row.interval>beforeByIndex.get(row.index).interval)
-    .map(row=>{const original=row.target?beforeBySource.get(row.sourceIndex):beforeByIndex.get(row.index);return {...row,beforeInterval:original.interval,added:row.interval-original.interval};});
-  const needed=period==='am'?plan.settings.amCount:job.rows.length-plan.settings.amCount;
+    .map(row=>{const original=(row.target?beforeBySource.get(row.sourceIndex):null)||beforeByIndex.get(row.index);return {...row,beforeInterval:original.interval,added:row.interval-original.interval};});
+  const needed=period==='am'?next.settings.amCount:job.rows.length-next.settings.amCount;
   const available=after.filter(row=>!row.excluded).length;
   const windowSummary=list=>{const values=list.filter(row=>row.window?.seconds!=null);return {minimum:values.length?Math.min(...values.map(row=>row.window.seconds)):null,failed:values.filter(row=>row.window.status==='fail').length};};
   return {count:selected.length,affected,available,needed,insufficient:available<needed,beforeWindows:windowSummary(before),afterWindows:windowSummary(after)};

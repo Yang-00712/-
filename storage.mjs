@@ -20,6 +20,7 @@ export function validateProject(data){
   const manualPlan=data.manualPlan==null?null:normalizeManualPlan(data.manualPlan);
   const manualSettings=data.manualSettings==null?null:normalizeManualSettings(data.manualSettings);
   if(manualPlan&&manualPlan.settings.amCount>rows.length)throw new Error('手動上午筆數超過元件總數。');
+  if(manualPlan?.schema===4&&manualPlan.rowCount!==rows.length)throw new Error('手動候選的元件總數與卡夾不符。');
   // Imported result claims are never trusted; always recompute locally.
   return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant:String(data.plant||'手動').slice(0,40),rows,settings,measurementSettings,timeMode,manualPlan,manualSettings,manualRevision:0,manualResult:null,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo)};
 }
