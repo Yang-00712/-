@@ -6,7 +6,7 @@ self.onmessage=({data})=>{try{
     if(attempt&&Date.now()-started>42000)break;
     attempts++;postMessage({type:'progress',revision:data.revision,attempt:attempts});
     result=solvePreview(data.rows,data.settings,data.remoteMap,{seed:(data.seed+attempt*7919)>>>0,constraints:data.constraints,deadline:started+42000});
-    if(result.ok)break;
+    if(result.ok||result.constraintConflict)break;
   }
   if(!result.ok&&constrained){postMessage({type:'progress',revision:data.revision,attempt:attempts,partial:true});result.partialPreview=solvePartialPreview(data.rows,data.settings,data.remoteMap,{seed:data.seed,constraints:data.constraints,deadline:started+55000});}
   postMessage({type:'result',revision:data.revision,result,attempts});

@@ -4,9 +4,13 @@ import {DEFAULT_SETTINGS, PLANTS, parseClock, formatClock, formatDuration, parse
 import {backgroundReport} from '../validation.mjs';
 
 test('clock and duration utilities are strict',()=>{
-  assert.equal(parseClock('0820'),30000); assert.equal(parseClock('13:06'),47160);
+  assert.equal(parseClock('0820'),30000); assert.equal(parseClock('820'),30000); assert.equal(parseClock('13:06'),47160);
+  assert.equal(parseClock('095655'),35815); assert.equal(parseClock('95655'),35815);
+  assert.equal(parseClock('9.55.45'),35745); assert.equal(parseClock('09:56:55'),35815);
   assert.equal(formatClock(47160),'13:06:00'); assert.equal(formatDuration(3660),'61:00');
   assert.throws(()=>parseClock('25:00'),/24 小時制/);
+  assert.throws(()=>parseClock('09:6'),/時刻須為/); assert.throws(()=>parseClock('9:55.45'),/時刻須為/);
+  assert.throws(()=>parseClock('236060'),/24 小時制/); assert.throws(()=>parseClock('1234567'),/時刻須為/);
 });
 
 test('parseRows preserves source codes and never guesses floor one',()=>{

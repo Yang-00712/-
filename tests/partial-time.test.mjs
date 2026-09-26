@@ -34,3 +34,22 @@ test('stale automatic preview preserves current equipment edits while labeling o
   assert.ok(html.includes('CURRENT-EQUIPMENT'));
   assert.ok(html.includes('上次排程'));
 });
+test('automatic clock editor uses decimal keyboard, keeps seconds and stays open after locking',()=>{
+  const {result}=fixture(),rows=makeDemo().rows,time=parseClock('095655');
+  const html=automaticTimeView({rows,settings:DEFAULT_SETTINGS,remotes:[],revision:1,result:{...result,revision:1},timeConstraints:{times:{r1:time},intervals:{}}}, {
+    period:'all',selected:'r1',editorId:'r1',editorOpen:{times:true},editorDraft:{times:'09:56:55'},editorError:{},
+  }, {esc:String,button:()=>''});
+  assert.match(html,/data-auto-editor="times" open/);
+  assert.match(html,/id="auto-clock"[^>]*type="text"[^>]*inputmode="decimal"[^>]*value="09:56:55"/);
+  assert.match(html,/095655 或 9\.55\.45/);
+  assert.match(html,/這是時刻，不是分秒期間/);
+});
+test('automatic clock editor renders an invalid draft inline without closing the editor',()=>{
+  const {result}=fixture(),rows=makeDemo().rows;
+  const html=automaticTimeView({rows,settings:DEFAULT_SETTINGS,remotes:[],revision:1,result:{...result,revision:1}}, {
+    period:'all',selected:'r1',editorId:'r1',editorOpen:{times:true},editorDraft:{times:'25.99.12'},editorError:{times:'時間超出 24 小時制範圍'},
+  }, {esc:String,button:()=>''});
+  assert.match(html,/data-auto-editor="times" open/);
+  assert.match(html,/value="25\.99\.12"[^>]*aria-invalid="true"/);
+  assert.match(html,/role="alert">時間超出 24 小時制範圍/);
+});
