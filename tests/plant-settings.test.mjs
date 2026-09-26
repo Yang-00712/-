@@ -41,7 +41,7 @@ test('mode-specific overrides work while variable oil parsing remains intact',()
 test('rules view renders the plant selector, effective values and required actions safely',()=>{
   const html=plantRulesView('ARO1',{regionStart:2},{esc:value=>String(value).replaceAll('<','&lt;')});
   assert.match(html,/id="rule-plant"/);assert.match(html,/id="plant-rule-form"/);
-  assert.match(html,/name="regionStart"[^>]*value="2"/);assert.match(html,/>儲存規則<\/button>/);
+  assert.match(html,/name="regionStart"[^>]*value="2"/);assert.match(html,/>儲存至本機<\/button>/);
   assert.match(html,/data-act="plant-rule-reset"/);assert.match(html,/data-act="plant-rule-apply"/);
   assert.equal((html.match(/<option value=/g)||[]).length,PLANT_NAMES.length+5,'plant placeholder and options plus two source selectors');
   const manual=plantRulesView('手動');assert.match(manual,/人工修正/);assert.match(manual,/type="submit" disabled/);

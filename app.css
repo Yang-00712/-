@@ -130,3 +130,5 @@ html,body{max-width:100%;overflow-x:hidden}.brand-logo{width:42px;height:42px;bo
 .manual-window-list .button{padding:5px 8px;min-height:36px;font-size:12px}
 .manual-history-list{display:grid;gap:8px;max-height:60dvh;overflow:auto}.manual-history-item{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px}.manual-history-item>div{flex:1;min-width:0}.manual-history-item b{font-size:13px}.manual-history-item small{display:block;margin-top:6px;font-size:11px;color:var(--muted)}.manual-history-item .button{font-size:12px;white-space:nowrap}.manual-toolbar{gap:5px}.manual-toolbar .button{padding:8px}
 @media(max-width:899px){.mobile-nav{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding-left:7px;padding-right:7px}.mobile-nav .nav-item{width:100%;padding:7px 1px;font-size:10px}.mobile-nav .nav-item svg{width:21px;height:21px}.mobile-nav .nav-item span{font-size:10px;letter-spacing:-.3px}}
+
+.plant-profile-actions{margin:0 0 12px;flex-wrap:wrap}
