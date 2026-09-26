@@ -86,7 +86,7 @@ function validateExclusions(value, label, maximumIndex) {
 
 export function normalizeManualPlan(plan) {
   plainObject(plan, '手動時間方案');
-  if (![1,2].includes(plan.schema)) throw new Error('手動時間方案版本不支援');
+  if (![1,2,3].includes(plan.schema)) throw new Error('手動時間方案版本不支援');
   const settings = normalizeManualSettings(plainObject(plan.settings, '手動時間設定'));
   const amWindow = windowFor(settings, 'am');
   const pmWindow = windowFor(settings, 'pm');
@@ -110,7 +110,7 @@ export function normalizeManualPlan(plan) {
   return steps;
   };
   const steps=validateSteps(plan.steps,plan.schema===1?Math.max(amDuration,pmDuration):amDuration);
-  const pmSteps=plan.schema===2?validateSteps(plan.pmSteps,pmDuration):steps;
+  const pmSteps=plan.schema!==1?validateSteps(plan.pmSteps,pmDuration):steps;
   const excluded = plainObject(plan.excluded, '手動時間排除設定');
   const lastVisible = period => {
     const window = windowFor(settings, period);
@@ -120,11 +120,28 @@ export function normalizeManualPlan(plan) {
     for (let index = 0; index < totals.length && totals[index] <= duration; index += 1) last = index;
     return last;
   };
+  const adjustments={am:{},pm:{}};
+  if(plan.schema===3){
+    plainObject(plan.adjustments,'手動秒數修改');
+    for(const period of ['am','pm']){
+      const entries=Object.entries(plainObject(plan.adjustments[period],period+'秒數修改'));
+      const sequence=period==='am'?steps:pmSteps,window=windowFor(settings,period);
+      if(entries.length>MAX_STEPS)throw new Error('手動秒數修改筆數過多');
+      for(const [key,delta] of entries){
+        const index=Number(key);
+        if(String(index)!==key||!Number.isInteger(index)||index<0||index>lastVisible(period)||!Number.isInteger(delta)||Math.abs(delta)>86400)throw new Error('手動秒數修改索引或數值錯誤');
+        if(index>0&&(sequence[index]+delta<1||sequence[index]+delta>86400))throw new Error('候選時間必須保持先後順序');
+        if(index===0&&(window.start+delta<0||window.start+delta>window.end))throw new Error('第一個候選時刻超出一天或時段');
+        if(delta)adjustments[period][key]=delta;
+      }
+    }
+  }
   return {
     schema: plan.schema,
     settings,
     steps,
-    ...(plan.schema===2?{pmSteps}:{}),
+    ...(plan.schema!==1?{pmSteps}:{}),
+    ...(plan.schema===3?{adjustments}:{}),
     excluded: {
       am: validateExclusions(excluded.am, '上午', lastVisible('am')),
       pm: validateExclusions(excluded.pm, '下午', lastVisible('pm')),
@@ -157,7 +174,8 @@ export function candidateRows(plan, period) {
   const normalized = normalizeManualPlan(plan);
   const window = windowFor(normalized.settings, period);
   const excluded = new Set(normalized.excluded[period]);
-  const steps=period==='pm'&&normalized.schema===2?normalized.pmSteps:normalized.steps;
+  const originalSteps=period==='pm'&&normalized.schema!==1?normalized.pmSteps:normalized.steps;
+  const steps=originalSteps.map((step,index)=>step+(normalized.adjustments?.[period]?.[index]||0));
   const totals = cumulativeSteps(steps);
   const rows = [];
   let previousActive = window.start;
@@ -169,12 +187,76 @@ export function candidateRows(plan, period) {
       index,
       time,
       step: steps[index],
+      originalStep: originalSteps[index],
       excluded: isExcluded,
       interval: isExcluded ? null : time - previousActive,
     });
     if (!isExcluded) previousActive = time;
   }
   return rows;
+}
+
+function editablePlan(plan){
+  const normalized=normalizeManualPlan(plan);
+  if(normalized.schema===3)return normalized;
+  const trim=(steps,period)=>{
+    const window=windowFor(normalized.settings,period),duration=window.end-window.start;
+    const totals=cumulativeSteps(steps),end=totals.findIndex(total=>total>duration);
+    return steps.slice(0,end+1);
+  };
+  return {...normalized,schema:3,steps:trim(normalized.steps,'am'),pmSteps:trim(normalized.schema===1?normalized.steps:normalized.pmSteps,'pm'),adjustments:{am:{},pm:{}}};
+}
+
+function assignManualSpan(plan,period,previousIndex,index,seconds){
+  const source=period==='pm'?plan.pmSteps:plan.steps,adjustments=plan.adjustments[period];
+  const indexes=Array.from({length:index-previousIndex},(_,offset)=>previousIndex+1+offset);
+  if(seconds<indexes.length)throw new Error(`此段包含 ${indexes.length} 個候選，間隔不能少於 ${indexes.length} 秒`);
+  const values=indexes.map(i=>source[i]+(adjustments[i]||0)),total=values.reduce((sum,value)=>sum+value,0);
+  const remaining=seconds-indexes.length;
+  const exact=values.map(value=>remaining*value/total),allocated=exact.map(value=>1+Math.floor(value));
+  const rest=seconds-allocated.reduce((sum,value)=>sum+value,0);
+  const order=indexes.map((_,i)=>i).sort((a,b)=>(exact[b]%1)-(exact[a]%1));
+  for(let i=0;i<rest;i++)allocated[order[i]]++;
+  indexes.forEach((key,i)=>{const delta=allocated[i]-source[key];if(delta)adjustments[key]=delta;else delete adjustments[key];});
+}
+
+// Change an actual retained interval; following clocks move by the same delta.
+// Reductions are spread across skipped candidate steps so restoring never reverses time.
+export function setManualInterval(plan,period,index,seconds,anchor){
+  integerIn(seconds,1,7200,'間隔秒數');
+  const next=editablePlan(plan),window=windowFor(next.settings,period);
+  const active=activeCandidates(next,period),position=active.findIndex(row=>row.index===index);
+  if(position<0)throw new Error('請選一個尚未刪除的候選');
+  const current=active[position],previous=active[position-1];
+  const origin=previous?.time??(anchor??window.start),target=origin+seconds;
+  if(target>window.end||target<0)throw new Error('修改後的時刻超出候選時段');
+  const adjustments=next.adjustments[period];
+  if(!previous){
+    adjustments[0]=(adjustments[0]||0)+target-current.time;
+  }else{
+    assignManualSpan(next,period,previous.index,index,seconds);
+  }
+  return normalizeManualPlan(next);
+}
+
+export function setManualMappedTimes(plan,rows,settings){
+  const next=editablePlan(plan);
+  for(const period of ['am','pm']){
+    const label=period==='am'?'上午':'下午',half=rows.filter(row=>row.period===label);
+    const needed=period==='am'?next.settings.amCount:rows.length-next.settings.amCount;
+    if(half.length!==needed)throw new Error('修正方案的上午／下午筆數不符');
+    const active=activeCandidates(next,period);if(active.length<half.length)throw new Error('候選不足，無法套用修正');
+    let previous=parseClock(settings[period+'Start']);
+    const end=parseClock(next.settings[period+'End']);
+    for(let i=0;i<half.length;i++){
+      if(!Number.isInteger(half[i].time)||half[i].time<=previous||half[i].time>end)throw new Error('修正方案時刻必須依序增加且在候選時段內');
+      integerIn(half[i].time-previous,1,7200,'間隔秒數');
+      if(i===0)next.adjustments[period][0]=(next.adjustments[period][0]||0)+half[i].time-active[0].time;
+      else assignManualSpan(next,period,active[i-1].index,active[i].index,half[i].time-previous);
+      previous=half[i].time;
+    }
+  }
+  return normalizeManualPlan(next);
 }
 
 export function activeCandidates(plan, period) {

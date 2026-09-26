@@ -6,10 +6,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   hardMin: 55, hardMax: 82,
 });
 
-export const PLANTS = Object.freeze([
-  'ARO1', 'ARO2', 'ARO3', 'PP', 'OL2', 'FAS', 'INA', 'MA', 'PVC', '大連',
-  'BG2', '李長榮', '南北儲', '中油', '油料二', '基礎油', '油品部成品課', '南儲', '易增', '手動',
-]);
+import {PLANT_NAMES,REVERSED_SOURCE_PLANTS,parsePlantFields,plantSupport} from './plant-parser.mjs';
+
+export const PLANTS = PLANT_NAMES;
+export {plantSupport};
 
 const SPECIAL = new Set(['C', 'P', 'R', 'S', 'A', 'I']);
 const BG = Object.freeze({ normal: [91, 130], hard: [151, 190] });
@@ -81,68 +81,6 @@ function specialForm(text) {
   return tokens.find(token => SPECIAL.has(token)) ?? '';
 }
 
-const REVERSED_SOURCE_PLANTS = new Set(['油料二', '基礎油', '油品部成品課']);
-const FIXED_PLANTS = Object.freeze({
-  ARO1: {source:'E',region:[1,3],floor:[4,2],equipment:[6,8],form:['E',4],groupTail:5},
-  ARO2: {source:'E',region:[1,3],floor:[4,2],equipment:[6,8],form:['E',4],groupTail:5},
-  PP: {source:'E',region:[1,3],floor:[4,1],equipment:[5,8],form:['E',4],groupTail:5},
-  OL2: {source:'E',region:[1,1],floor:[8,2],equipment:[2,6],form:['E',4],groupTail:4},
-  MA: {source:'D',region:[1,4],floor:[4,2],equipment:[4,8],form:['E',4],groupTail:5},
-  BG2: {source:'E',region:[1,1],floor:[2,2],equipment:[4,6],form:['E',3],groupTail:4},
-  '李長榮': {source:'E',region:[1,4],floor:[5,2],equipment:[7,6],form:['E',4],groupTail:5},
-  '易增': {source:'E',region:[1,1],floor:[2,2],equipment:[4,6],form:['E',3],groupTail:4},
-});
-
-function fixedSlice(source, range, label, issues) {
-  const [start, length] = range;
-  if (source.length < start + length - 1) { issues.push(`${label}來源長度不足`); return ''; }
-  return source.slice(start - 1, start - 1 + length);
-}
-
-function floorNumber(token) {
-  const text = token.trim().toUpperCase();
-  const alpha = /^([A-I])F$/.exec(text);
-  if (alpha) return alpha[1].charCodeAt(0) - 55;
-  const digits = text.replace(/^F/,'').replace(/F$/,'');
-  if (!/^\d{1,2}$/.test(digits)) return null;
-  const value = Number(digits);
-  return value >= 1 && value <= 99 ? value : null;
-}
-
-function parseFixed(d, e, rule, issues) {
-  const source = rule.source === 'D' ? d : e;
-  const region = fixedSlice(source, rule.region, '區域', issues).toUpperCase();
-  const floorToken = fixedSlice(source, rule.floor, '樓層', issues);
-  const equipment = fixedSlice(source, rule.equipment, '設備', issues);
-  const floor = floorNumber(floorToken);
-  if (floor == null) issues.push(floorToken ? `不支援樓層碼「${floorToken}」（未預設為1F）` : '無法可靠解析樓層（未預設為1F）');
-  const formSource = rule.form[0] === 'D' ? d : e;
-  const form = formSource.length >= rule.form[1] ? formSource.slice(-rule.form[1]) : '';
-  if (!form) issues.push('型式來源長度不足');
-  let groupStart = rule.equipment[0] + rule.equipment[1];
-  if (rule.floor[0] >= groupStart) groupStart = rule.floor[0] + rule.floor[1];
-  const groupEnd = e.length - rule.groupTail;
-  const group = groupStart <= groupEnd ? e.slice(groupStart - 1, groupEnd) : '';
-  if (!group) issues.push('完整小組來源長度不足');
-  return {region,equipment,floor,group,form};
-}
-
-function parseAro3(e, issues) {
-  if (e.length < 19 || e.length > 20) issues.push('ARO3 來源應為19或20字');
-  const floorStart = e.length - 8; // VBA 1-based position.
-  const region = e.slice(0,1).toUpperCase();
-  const floorToken = e.slice(floorStart - 1, floorStart + 1);
-  const floor = floorNumber(floorToken);
-  if (floor == null) issues.push(`不支援樓層碼「${floorToken}」（未預設為1F）`);
-  const group = e.slice(e.length - 7,e.length - 5);
-  if (!/^\d{2}$/.test(group)) issues.push('ARO3 小組兩碼無效');
-  const equipment = e.slice(1,floorStart - 1);
-  if (!equipment) issues.push('ARO3 設備不可空白');
-  const form = e.length >= 3 ? e.slice(-3) : '';
-  if (!form) issues.push('型式來源長度不足');
-  return {region,equipment,floor,group,form};
-}
-
 export function parseRows(rawPairs, plant, reverse = false) {
   if (!Array.isArray(rawPairs)) throw new Error('來源資料須為列陣列');
   if (typeof plant !== 'string' || !plant.trim()) throw new Error('請先選擇廠別');
@@ -160,17 +98,27 @@ export function parseRows(rawPairs, plant, reverse = false) {
       if (!parsed.equipment) issues.push('無法可靠解析設備');
       if (!parsed.region) issues.push('無法可靠解析區域');
       if (!parsed.group) issues.push('無法可靠解析完整小組');
-    } else if (plant === 'ARO3') parsed = parseAro3(e,issues);
-    else if (FIXED_PLANTS[plant]) parsed = parseFixed(d,e,FIXED_PLANTS[plant],issues);
-    else {
-      parsed = {floor:null,equipment:'',region:'',group:'',form:''};
-      issues.push(`${plant} 的變長或人工解析規則尚未移植`);
+    } else {
+      parsed=parsePlantFields(d,e,plant);issues.push(...parsed.issues);
     }
     return {
       id: `r${index + 1}`, d, e, region:parsed.region, equipment:parsed.equipment, floor:parsed.floor,
       group:parsed.group, form:parsed.form, background: 'none', floorMark: false,
       extraMark: false, issues,
     };
+  });
+}
+
+// Refresh only unresolved imported rows. Existing d/e are already mapped and
+// must not be reversed a second time (notably for the three oil plants).
+export function reparsePendingRows(rows,plant) {
+  if(!Array.isArray(rows))throw new Error('列資料須為陣列');
+  return rows.map(row=>{
+    if(!Array.isArray(row?.issues)||row.issues.length===0)return row;
+    let parsed;
+    if(plant==='示範廠')parsed=parseRows([{b:row.d,c:row.e}],plant,false)[0];
+    else parsed=parsePlantFields(row.d,row.e,plant);
+    return {...row,region:parsed.region,equipment:parsed.equipment,floor:parsed.floor,group:parsed.group,form:parsed.form,issues:[...parsed.issues]};
   });
 }
 
