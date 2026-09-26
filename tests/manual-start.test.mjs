@@ -24,7 +24,7 @@ test('manual first rows are start timestamps while auto inspection still require
   assert.equal(manual.rulesOk,true,manual.checks.map(check=>check.detail).join('；'));
   const automatic=inspectManualSchedule(rows,s);
   assert.equal(automatic.rulesOk,false);
-  assert.match(automatic.checks.map(check=>check.detail).join('；'),/獨立重算上下限/);
+  assert.match(automatic.checks.map(check=>check.detail).join('；'),/自動生成上下限/);
   const guides=manualIntervalGuides(rows,s,2,{});
   assert.deepEqual(guides[0],{start:true,min:0,max:0,parts:[]});
   assert.deepEqual(guides[2],{start:true,min:0,max:0,parts:[]});
@@ -40,7 +40,7 @@ test('manual start exemption does not relax the second row rules',()=>{
   ];
   const review=inspectManualSchedule(rows,s,{}, {manualStart:true});
   assert.equal(review.rulesOk,false);
-  assert.match(review.checks.map(check=>check.detail).join('；'),/第 2 筆 間隔不在獨立重算上下限/);
+  assert.match(review.checks.map(check=>check.detail).join('；'),/第 2 筆 間隔低於最低需求/);
 });
 
 test('manual preview reports zero first deficit and excess at both starts',()=>{

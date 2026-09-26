@@ -25,7 +25,7 @@ test('TXT revalidation accepts manual starts without weakening automatic entry r
  const output=createTxtOutput({getJob:()=>job,ensureIdle(){},persist:async()=>true,showModal:(title,html)=>shown.push({title,html}),esc:String,button:()=>'',toast(){}});
  output.openOutput();assert.equal(shown.at(-1).title,'產出 TXT');
  job.timeMode='auto';output.openOutput();assert.equal(shown.at(-1).title,'TXT 尚不能產出');
- assert.match(shown.at(-1).html,/間隔不在獨立重算上下限 180–240/);
+ assert.match(shown.at(-1).html,/間隔不在自動生成上下限 180–240/);
 });
 
 test('one-time retrieval clears only legacy receipt history and shows no saved keys',t=>{

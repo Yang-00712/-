@@ -135,9 +135,11 @@ export function adjustManualRows(rows,settings,remotes={},options={}){
     if(!Number.isInteger(returnSeconds)||returnSeconds<0)return failure([`${period}無法取得返回1F秒數。`],beforeWindows,beforeReview);
     const anchor=parseClock(s[startName]),deadline=parseClock(s[endName]);
     const targetLo=deadline-s[earlyMaxName]-anchor-returnSeconds,targetHi=deadline-s[earlyMinName]-anchor-returnSeconds;
-    const lo=halfGuides.map(item=>item.min),hi=halfGuides.map(item=>item.max);
+    // Existing manual additions are valid preferences, not errors to clip away.
+    // Automatic adjustment may retain them, but cannot invent further excess.
+    const lo=halfGuides.map(item=>item.min),hi=halfGuides.map((item,i)=>Math.max(item.max,half[i].interval));
     const firstGap=half[0].time-anchor;lo[0]=firstGap;hi[0]=firstGap;
-    const preferred=half.map(row=>row.interval),ordinary=halfGuides.map(ordinaryGuide);
+    const preferred=half.map(row=>row.interval),ordinary=halfGuides.map((guide,i)=>ordinaryGuide(guide)&&half[i].interval<=guide.max);
     const gaps=solveHalf(lo,hi,ordinary,preferred,targetLo,targetHi,s.mode==='auto');
     if(!gaps)return failure([`${period}在逐列上下限、80窗、分布與返回時間範圍內，本次未找到可行調整。`],beforeWindows,beforeReview);
     let time=anchor;

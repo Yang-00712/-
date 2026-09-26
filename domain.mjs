@@ -283,13 +283,29 @@ export function manualIntervalGuides(rows,settings,amCount,remotes={}) {
     if(first)return {start:true,min:0,max:0,parts:[]};
     const bounds=rowBounds(row,previous,first,settings,remotes);
     if(bounds.error)return {error:bounds.error.replace(row.id+' ','')};
-    return {min:bounds.lo,max:bounds.hi,parts:bounds.parts};
+    return {min:bounds.lo,max:bounds.hi,parts:bounds.parts,allowExtra:true};
   });
 }
 
 function groupKey(row) { return [row.region,row.equipment,row.floor,row.group].join('|'); }
-export function automaticIntervalGuides(rows,settings,amCount,remotes={}){
-  return rows.map((row,index)=>{const b=rowBounds(row,rows[index-1],index===0||index===amCount,settings,remotes);return b.error?{error:b.error}:{min:b.lo,max:b.hi,parts:b.parts};});
+// A fixed appointment can require extra time before it. Keep that allowance
+// local to the appointment block; unpinned random generation retains its caps.
+function appointmentExtraIndexes(rows,constraints={}){
+  const indexes=[];let previous=-1;
+  for(let i=0;i<rows.length;i++)if(constraints.times?.[rows[i].id]!=null){
+    for(let j=i;j>previous;j--)if(constraints.intervals?.[rows[j].id]==null){indexes.push(j);break;}
+    previous=i;
+  }
+  return indexes;
+}
+function extraIntervalIds(rows,constraints={}){
+  const ids=new Set(appointmentExtraIndexes(rows,constraints).map(i=>rows[i].id));
+  rows.forEach((row,i)=>{if(constraints.intervals?.[row.id]!=null||constraints.times?.[row.id]!=null||(i&&constraints.times?.[rows[i-1].id]!=null))ids.add(row.id);});
+  return ids;
+}
+export function automaticIntervalGuides(rows,settings,amCount,remotes={},constraints={}){
+  const cut=amCount>0?amCount:rows.length,extra=new Set([...extraIntervalIds(rows.slice(0,cut),constraints),...extraIntervalIds(rows.slice(cut),constraints)]);
+  return rows.map((row,index)=>{const b=rowBounds(row,rows[index-1],index===0||index===amCount,settings,remotes);return b.error?{error:b.error}:{min:b.lo,max:b.hi,parts:b.parts,allowExtra:extra.has(row.id)};});
 }
 function groupCuts(rows) {
   const cuts = [];
@@ -327,18 +343,37 @@ function solveHalf(rows, anchor, deadline, earlyMin, earlyMax, settings, remoteM
     const pins=[],lo=bounds.map(b=>b.lo),hi=bounds.map(b=>b.hi);
     for(let i=0;i<rows.length;i++){
       const fixed=constraints.intervals[rows[i].id],time=constraints.times[rows[i].id];
-      if(fixed!=null&&!(continuation&&i===0)){if(fixed<lo[i]||fixed>hi[i])return {error:`${period}元件 ${rows[i].id} 指定間隔 ${formatDuration(fixed)} 不在規則 ${formatDuration(lo[i])}–${formatDuration(hi[i])} 內`};lo[i]=hi[i]=fixed;}
+      if(fixed!=null&&!(continuation&&i===0)){if(fixed<lo[i])return {error:`${period}元件 ${rows[i].id} 指定間隔 ${formatDuration(fixed)} 低於最低需求 ${formatDuration(lo[i])}`};lo[i]=hi[i]=fixed;}
       if(time!=null){if(time<anchor||time>deadline)return {error:`${period}元件 ${rows[i].id} 指定時間不在本時段內`};pins.push([i,time-anchor]);}
     }
     let previousIndex=-1,previousTime=0;
     const minimumTotal=lo.reduce((a,b)=>a+b,0);
     if(minimumTotal>targetHi)return {error:`${period}逐筆最少需要 ${minimumTotal} 秒，截止前最多 ${targetHi} 秒`};
     for(const [index,time] of pins){
-      const minimum=lo.slice(previousIndex+1,index+1).reduce((a,b)=>a+b,0),maximum=hi.slice(previousIndex+1,index+1).reduce((a,b)=>a+b,0),available=time-previousTime;
-      if(available<minimum||(previousIndex>=0&&available>maximum))return {error:`${period} ${previousIndex<0?'最早開始':rows[previousIndex].id} → ${rows[index].id} 指定相差 ${formatDuration(available)}，規則允許 ${formatDuration(minimum)}–${formatDuration(maximum)}；${available<minimum?'不足 '+formatDuration(minimum-available):'超出上限 '+formatDuration(available-maximum)}${previousIndex<0?'（起點可延後，不能提早）':''}`};
+      const minimum=lo.slice(previousIndex+1,index+1).reduce((a,b)=>a+b,0),available=time-previousTime;
+      if(available<minimum)return {error:`${period} ${previousIndex<0?'最早開始':rows[previousIndex].id} → ${rows[index].id} 指定相差 ${formatDuration(available)}，最低需要 ${formatDuration(minimum)}；不足 ${formatDuration(minimum-available)}${previousIndex<0?'（起點可延後，不能提早）':''}`};
       previousIndex=index;previousTime=time;
     }
-    const solved=solveTimeline({lo,hi,ordinary:bounds.map(b=>b.ordinary),preferred:bounds.map((b,i)=>lo[i]+Math.floor(random()*(hi[i]-lo[i]+1))),endLo:targetLo,endHi:targetHi,startMax:continuation?0:Math.max(0,targetHi),pins,windows:settings.mode==='auto'});
+    const ordinary=bounds.map((b,i)=>b.ordinary&&constraints.intervals[rows[i].id]==null&&constraints.times[rows[i].id]==null);
+    const wanted=bounds.map((b,i)=>constraints.intervals[rows[i].id]??(lo[i]+Math.floor(random()*(hi[i]-lo[i]+1))));
+    const input={lo,hi,ordinary,preferred:wanted,endLo:targetLo,endHi:targetHi,startMax:continuation?0:Math.max(0,targetHi),pins,windows:settings.mode==='auto'};
+    let solved=solveTimeline(input);
+    if(!solved&&pins.length){
+      const extended=[...hi],extendedLo=[...lo],extendedWanted=[...wanted],extendedOrdinary=[...ordinary];
+      for(const i of appointmentExtraIndexes(rows,constraints)){
+        if(continuation&&i===0)continue;
+        const pin=pins.findIndex(([index])=>index>=i),[endIndex,endTime]=pins[pin],before=pin?pins[pin-1]:null;
+        extended[i]=Math.max(extended[i],endTime);extendedOrdinary[i]=false;
+        if(before){
+          const available=endTime-before[1],others=[];
+          for(let j=before[0]+1;j<=endIndex;j++)if(j!==i)others.push(j);
+          extendedLo[i]=Math.max(lo[i],available-others.reduce((sum,j)=>sum+hi[j],0));
+          extended[i]=Math.max(hi[i],available-others.reduce((sum,j)=>sum+lo[j],0));
+          extendedWanted[i]=Math.max(extendedLo[i],Math.min(extended[i],available-others.reduce((sum,j)=>sum+wanted[j],0)));
+        }
+      }
+      solved=solveTimeline({...input,lo:extendedLo,hi:extended,preferred:extendedWanted,ordinary:extendedOrdinary});
+    }
     if(!solved)return {error:`${period}指定時間、逐筆間隔、<80窗口與收尾範圍衝突，或本次分布搜尋未完成；保留鎖定值，請檢查 ${pins.map(([i])=>rows[i].id).join('、')||'指定間隔'}`};
     const actualAnchor=anchor+solved.offset;let time=actualAnchor;
     const output=rows.map((row,i)=>{time+=solved.gaps[i];return {...row,time,interval:solved.gaps[i],period,parts:bounds[i].parts,...(i===0?{sessionStart:actualAnchor}:{})};});
@@ -409,6 +444,7 @@ function rowStructureErrors(rows) {
 
 function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remoteMap, label, options={}) {
   const errors = [], bounds = [];
+  const extra=extraIntervalIds(output,options.timeConstraints),constraints=options.timeConstraints??{};
   if(!['yellow','red'].includes(output[0]?.background))errors.push(`${label}首筆缺少正式底色`);
   let previousTime = anchor;
   for (let i = 0; i < output.length; i++) {
@@ -424,8 +460,10 @@ function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remo
     }
     const b = rowBounds(row,output[i-1],i===0,settings,remoteMap);
     if (b.error) { errors.push(b.error); continue; }
-    bounds.push(b);
-    if (!Number.isInteger(row.interval) || row.interval < b.lo || row.interval > b.hi) errors.push(`${row.id} 間隔不在獨立重算上下限 ${b.lo}–${b.hi}`);
+    const allowExtra=options.manualStart||extra.has(row.id);
+    bounds.push({...b,ordinary:b.ordinary&&constraints.intervals?.[row.id]==null&&constraints.times?.[row.id]==null&&!(allowExtra&&row.interval>b.hi)});
+    if (!Number.isInteger(row.interval) || row.interval < b.lo || (!allowExtra&&row.interval > b.hi)) errors.push(`${row.id} ${allowExtra?'間隔低於最低需求 '+b.lo:'間隔不在自動生成上下限 '+b.lo+'–'+b.hi}`);
+    if(!Number.isInteger(row.time)||row.time<anchor||row.time>deadline)errors.push(`${row.id} 時間不在${label}時段內`);
     if (row.time !== previousTime + row.interval) errors.push(`${row.id} 時間與相鄰間隔不一致`);
     previousTime = row.time;
   }
@@ -498,14 +536,14 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
   for(let p=1;p<pinEntries.length;p++){
     const before=pinEntries[p-1],after=pinEntries[p];
     if(before.time<=amEnd&&after.time>=pmStart)continue;
-    let minimum=0,maximum=0;
+    let minimum=0,maximum=0,allFixed=true;
     for(let i=before.index+1;i<=after.index;i++){
       const b=rowBounds(rows[i],rows[i-1],false,s,remoteMap),fixed=constraints.intervals[rows[i].id];
       if(b.error)return failed([b.error]);
-      minimum+=fixed??b.lo;maximum+=fixed??b.hi;
+      minimum+=fixed??b.lo;maximum+=fixed??b.hi;if(fixed==null)allFixed=false;
     }
     const available=after.time-before.time;
-    if(available<minimum||available>maximum)fixedConflicts.push(`第 ${before.index+1} 筆 ${formatClock(before.time)} → 第 ${after.index+1} 筆 ${formatClock(after.time)}：指定相差 ${formatDuration(available)}，規則允許 ${formatDuration(minimum)}–${formatDuration(maximum)}；${available<minimum?'不足 '+formatDuration(minimum-available):'超出上限 '+formatDuration(available-maximum)}`);
+    if(available<minimum||(allFixed&&available>maximum))fixedConflicts.push(`第 ${before.index+1} 筆 ${formatClock(before.time)} → 第 ${after.index+1} 筆 ${formatClock(after.time)}：指定相差 ${formatDuration(available)}，${allFixed?'已鎖定間隔合計':'最低需要'} ${formatDuration(minimum)}；${available<minimum?'不足 '+formatDuration(minimum-available):'與鎖定間隔相差 '+formatDuration(available-maximum)}`);
   }
   if(fixedConflicts.length)return {...failed(['指定時間區段與間隔規則衝突，先保留其他可排出的區段。',...fixedConflicts]),constraintConflict:true};
   const random=seeded(options?.seed??123), errors=[];
@@ -519,8 +557,8 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
     const pm=solveHalf(rows.slice(cut),pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,random,'下午',constrained?constraints:null);
     if(pm.error){errors.push(pm.error);continue;}
     const combined=[...am.rows,...pm.rows];
-    const verifyAm=verifyHalf(am.rows,am.actualAnchor??amStart,amEnd,s.amEarlyMin,s.amEarlyMax,s,remoteMap,'上午');
-    const verifyPm=verifyHalf(pm.rows,pm.actualAnchor??pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,'下午');
+    const verifyAm=verifyHalf(am.rows,am.actualAnchor??amStart,amEnd,s.amEarlyMin,s.amEarlyMax,s,remoteMap,'上午',{timeConstraints:constraints});
+    const verifyPm=verifyHalf(pm.rows,pm.actualAnchor??pmStart,pmEnd,s.pmEarlyMin,s.pmEarlyMax,s,remoteMap,'下午',{timeConstraints:constraints});
     const verificationErrors=[...verifyAm.errors,...verifyPm.errors];
     combined.forEach(row=>{if(constraints.times[row.id]!=null&&row.time!==constraints.times[row.id])verificationErrors.push(`${row.id} 指定時間不符`);if(constraints.intervals[row.id]!=null&&row.interval!==constraints.intervals[row.id])verificationErrors.push(`${row.id} 指定間隔不符`);});
     if(verificationErrors.length){errors.push(`獨立驗算未通過：${verificationErrors.join('、')}`);continue;}
@@ -530,7 +568,7 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
       ...(constrained?[{label:'指定時間與間隔',ok:true,detail:`${pinEntries.length} 個指定時間完全相符；起點未早於設定時間`}]:[]),
       {label:'完整小組切點',ok:true,detail:`上午 ${cut} 筆，下午 ${rows.length-cut} 筆`},
       {label:'半日首筆底色',ok:true,detail:'上午、下午首筆均有正式底色；進場不重複加背景時間'},
-      {label:'逐列規則獨立重算',ok:true,detail:'上下限、首筆、特殊、跨區、遠距與時間鏈通過'},
+      {label:'逐列規則獨立重算',ok:true,detail:'生成範圍、最低需求、首筆、特殊、跨區、遠距與時間鏈通過；指定時間可加時'},
       {label:'返回1F',ok:true,detail:`上午 ${formatClock(verifyAm.returnTime)}；下午 ${formatClock(verifyPm.returnTime)}`},
       {label:'普通三連續同秒',ok:true,detail:'只檢查連續普通間隔；背景與遠距不誤判'},
       {label:'80間隔',ok:s.mode!=='auto'||minWindow==null||minWindow>=3660,detail:s.mode!=='auto'?'廠外模式不套門檻':minWindow==null?'各半日未形成81點窗口':`${minWindow} 秒`},
@@ -546,6 +584,7 @@ export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123
 // Whole-day verification still owns acceptance, including windows across pins.
 function partialHalf(half,earliest,deadline,earlyMin,earlyMax,settings,remotes,random,period,constraints,stopAt,memo){
   const output=half.map(row=>({...row,period,time:constraints.times[row.id]??null,interval:null,needsManual:true})),errors=[];
+  const extra=extraIntervalIds(half,constraints);
   const pins=half.flatMap((row,index)=>constraints.times[row.id]==null?[]:[index]);
   let previous=-1;
   const apply=(from,to,terminal)=>{
@@ -565,7 +604,7 @@ function partialHalf(half,earliest,deadline,earlyMin,earlyMax,settings,remotes,r
   for(let i=0;i<output.length;i++){
     const row=output[i],prior=i?output[i-1].time:(row.sessionStart??earliest),bound=rowBounds(row,output[i-1],i===0,settings,remotes);
     row.interval=Number.isInteger(row.time)&&Number.isInteger(prior)?row.time-prior:null;
-    row.needsManual=!Number.isInteger(row.interval)||Boolean(bound.error)||row.interval<bound.lo||row.interval>bound.hi||
+    row.needsManual=!Number.isInteger(row.interval)||Boolean(bound.error)||row.interval<bound.lo||(!extra.has(row.id)&&row.interval>bound.hi)||
       (constraints.intervals[row.id]!=null&&row.interval!==constraints.intervals[row.id]);
   }
   return {rows:withSessionBackgrounds(output),errors};
@@ -585,7 +624,7 @@ export function solvePartialPreview(rows,settings,remotes={},options={}){
     const previous=rows[i-1],time=constraints.times[row.id],before=previous&&constraints.times[previous.id];
     if(time==null||before==null||(before<=times.amEnd&&time>=times.pmStart))return false;
     const bounds=rowBounds(row,previous,false,s,remotes),gap=time-before;
-    return !bounds.error&&(gap<bounds.lo||gap>bounds.hi||(constraints.intervals[row.id]!=null&&gap!==constraints.intervals[row.id]));
+    return !bounds.error&&(gap<bounds.lo||(constraints.intervals[row.id]!=null&&gap!==constraints.intervals[row.id]));
   }).length;
   let best=null;
   for(const cut of cuts){
@@ -599,7 +638,7 @@ export function solvePartialPreview(rows,settings,remotes={},options={}){
         result=partialHalf(half,earliest,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,random,period,constraints,options.deadline,memo);
         errors.push(...result.errors);
       }else{
-        const verify=verifyHalf(result.rows,result.actualAnchor??earliest,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,period);
+        const verify=verifyHalf(result.rows,result.actualAnchor??earliest,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,period,{timeConstraints:constraints});
         if(verify.errors.length){errors.push(...verify.errors);result=partialHalf(half,earliest,deadline,s[key+'EarlyMin'],s[key+'EarlyMax'],s,remotes,random,period,constraints,options.deadline,memo);errors.push(...result.errors);}
       }
       result.rows.forEach((row,i)=>{
