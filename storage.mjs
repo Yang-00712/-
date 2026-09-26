@@ -1,5 +1,6 @@
 import {DEFAULT_SETTINGS,validateSettings} from './domain.mjs';
 import {DEFAULT_MEASUREMENT_SETTINGS,normalizeMeasurementSettings} from './measurements.mjs';
+import {normalizeManualPlan,normalizeManualSettings} from './manual-time.mjs';
 const DB='log-mobile', STORE='jobs';
 export async function database(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DB,1);request.onupgradeneeded=()=>request.result.createObjectStore(STORE,{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);request.onblocked=()=>reject(new Error('請先關閉另一個舊版工作台，再重新開啟。'));});}
 async function transaction(mode,fn){const db=await database();try{return await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,mode);let value;const request=fn(tx.objectStore(STORE));request.onsuccess=()=>{value=request.result;};tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('儲存中止'));});}finally{db.close();}}
@@ -15,8 +16,12 @@ export function validateProject(data){
   const remotes=data.remotes||[];if(!Array.isArray(remotes)||remotes.length>448)throw new Error('遠距組合格式錯誤。');
   for(const g of remotes){if(!g||typeof g.id!=='string'||typeof g.name!=='string'||g.name.length>100||!Array.isArray(g.rowIds)||g.rowIds.some(id=>!ids.has(id))||!Number.isInteger(g.min)||!Number.isInteger(g.max)||g.min<0||g.max<g.min||g.max>7200)throw new Error('遠距組合的時間或元件無效。');}
   const overrides=data.overrides||{};if(typeof overrides!=='object'||Array.isArray(overrides)||Object.keys(overrides).length>448)throw new Error('單筆遠距格式錯誤。');for(const [id,x] of Object.entries(overrides)){if(!ids.has(id)||!x||!Number.isInteger(x.min)||!Number.isInteger(x.max)||x.min<0||x.max<x.min||x.max>7200)throw new Error('單筆遠距時間無效。');}
+  const timeMode=data.timeMode??'auto';if(!['auto','manual'].includes(timeMode))throw new Error('時間方式無效。');
+  const manualPlan=data.manualPlan==null?null:normalizeManualPlan(data.manualPlan);
+  const manualSettings=data.manualSettings==null?null:normalizeManualSettings(data.manualSettings);
+  if(manualPlan&&manualPlan.settings.amCount>rows.length)throw new Error('手動上午筆數超過元件總數。');
   // Imported result claims are never trusted; always recompute locally.
-  return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant:String(data.plant||'手動').slice(0,40),rows,settings,measurementSettings,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo)};
+  return {schema:1,id:crypto.randomUUID(),name:data.name,sourceName:String(data.sourceName||'').slice(0,200),sheet:String(data.sheet||'').slice(0,100),plant:String(data.plant||'手動').slice(0,40),rows,settings,measurementSettings,timeMode,manualPlan,manualSettings,manualRevision:0,manualResult:null,remotes:structuredClone(remotes),overrides:structuredClone(overrides),result:null,revision:0,updated:new Date().toISOString(),demo:Boolean(data.demo)};
 }
 export function remoteMap(job){const map={};for(const g of job.remotes)for(const id of g.rowIds)map[id]={min:g.min,max:g.max,name:g.name};for(const [id,v] of Object.entries(job.overrides||{}))map[id]={...v,name:map[id]?.name||'單筆遠距'};return map;}
 export function durationInput(value){

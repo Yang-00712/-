@@ -442,6 +442,32 @@ function verifyHalf(output, anchor, deadline, earlyMin, earlyMax, settings, remo
   return {errors,returnTime,minimumWindow};
 }
 
+// Manual times are inspected with the same rules, never repaired or redistributed.
+export function inspectManualSchedule(rows,settings,remotes={}) {
+  const errors=validateSettings(settings);if(errors.length)throw new Error(errors.join('；'));
+  if(!rows.length)throw new Error('請先匯入元件。');
+  const checks=[],summary={amCount:0,pmCount:0,amReturn:null,pmReturn:null,amLastTime:null,pmLastTime:null};
+  const rowLabels=new Map(rows.map((row,index)=>[row.id,`第 ${index+1} 筆`]));
+  const readable=issue=>{const id=String(issue).split(/[\s：]/,1)[0];return rowLabels.has(id)?rowLabels.get(id)+issue.slice(id.length):issue;};
+  const report=(label,issues)=>checks.push({label,ok:!issues.length,detail:issues.length?`${issues.length} 項：${issues.slice(0,8).map(readable).join('；')}${issues.length>8?'…':''}`:'通過'});
+  report('解析資料',rows.flatMap(row=>(row.issues||[]).map(issue=>`${row.id}：${issue}`)));
+  const cut=rows.findIndex(row=>row.period==='下午');
+  report('完整小組切點',cut>0&&groupKey(rows[cut-1])===groupKey(rows[cut])?['午休切在同一小組內']:[]);
+  for(const [key,label] of [['am','上午'],['pm','下午']]){
+    const half=rows.filter(row=>row.period===label);summary[key+'Count']=half.length;
+    if(!half.length)continue;
+    summary[key+'LastTime']=half.at(-1).time;
+    const structure=half.map((row,i)=>i===0&&row.background==='red'?{...row,background:'yellow'}:row);
+    report(label+'背景與樓層標記',rowStructureErrors(structure));
+    const unknown=half.filter(row=>!Number.isInteger(row.floor)||row.floor<1||row.floor>99);
+    if(unknown.length){report(label+'時間規則',unknown.map(row=>`${row.id} 樓層未知`));continue;}
+    const verified=verifyHalf(half,parseClock(settings[key+'Start']),parseClock(settings[key+'End']),settings[key+'EarlyMin'],settings[key+'EarlyMax'],settings,remotes,label);
+    summary[key+'Return']=verified.returnTime;
+    report(label+'時間規則／80窗',verified.errors);
+  }
+  return {checks,summary,rulesOk:checks.every(check=>check.ok)};
+}
+
 export function solvePreview(rows, settings, remoteMap = {}, options = {seed:123}) {
   const s={...DEFAULT_SETTINGS,...(settings??{})}, settingErrors=validateSettings(s);
   if(!Array.isArray(rows)||!rows.length)return failed([...settingErrors,'沒有可試排的資料列']);

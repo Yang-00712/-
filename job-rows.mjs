@@ -1,12 +1,13 @@
 import {withSessionBackgrounds} from './domain.mjs';
 import {invalidateMeasurements} from './measurements.mjs';
 
-export function resultIsCurrent(job){return Boolean(job.result?.ok&&job.result.revision===job.revision);}
+export function activeResult(job){return job.timeMode==='manual'?job.manualResult:job.result;}
+export function resultIsCurrent(job){const result=activeResult(job);return Boolean(result?.ok&&result.revision===job.revision);}
 
 // Session colors belong to this schedule, not the user's permanent source marks.
 export function currentJobRows(job){
   if(!resultIsCurrent(job))return job.rows;
-  const scheduled=new Map(withSessionBackgrounds(job.result.rows).map(row=>[row.id,row]));
+  const scheduled=new Map(withSessionBackgrounds(activeResult(job).rows).map(row=>[row.id,row]));
   return job.rows.map(row=>({...row,...scheduled.get(row.id),a:row.a??null,b:row.b??null}));
 }
 

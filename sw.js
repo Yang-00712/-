@@ -1,7 +1,7 @@
 importScripts('./version.js');
 const CACHE=`log-mobile-shell-${LOG_RELEASE.version}`;
-const ASSETS=['./','./index.html','./version.js','./app.css','./app.mjs','./domain.mjs','./storage.mjs','./validation.mjs','./measurements.mjs','./job-rows.mjs','./update.mjs','./import-worker.js','./solver-worker.mjs','./vendor/xlsx.mini.min.js','./manifest.webmanifest','./icon-192.png','./icon-192.png?v=cat-right','./icon-512.png','./icon-512.png?v=cat-right'];
-// Atomic app-shell install. An update waits until old tabs close; no mid-job reload.
+const ASSETS=['./','./index.html','./version.js','./app.css','./app.mjs','./domain.mjs','./storage.mjs','./validation.mjs','./measurements.mjs','./job-rows.mjs','./manual-time.mjs','./manual-ui.mjs','./update.mjs','./import-worker.js','./solver-worker.mjs','./vendor/xlsx.mini.min.js','./manifest.webmanifest','./icon-192.png','./icon-192.png?v=cat-right','./icon-512.png','./icon-512.png?v=cat-right'];
+// Include both automatic and manual modules in the atomic app-shell install. An update waits until old tabs close; no mid-job reload.
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(path=>new Request(path,{cache:'reload'}))))));
 // The client requests activation only after saving and checking for active edits.
 self.addEventListener('message',event=>{if(event.data?.type==='GET_RELEASE'){event.source?.postMessage({type:'LOG_RELEASE',requestId:event.data.requestId,version:LOG_RELEASE.version});return;}if(event.data?.type!=='APPLY_UPDATE')return;event.waitUntil((async()=>{const windows=(await self.clients.matchAll({type:'window',includeUncontrolled:true})).filter(client=>client.url.startsWith(self.registration.scope));if(windows.length>1){event.source?.postMessage({type:'UPDATE_BLOCKED'});return;}await self.skipWaiting();})());});
